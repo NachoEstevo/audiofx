@@ -195,8 +195,19 @@ export function FluidOrb({ size = 240, color = "#1A73F2", getLevel, className, s
     let level = 0;
     let last = performance.now();
     let raf = 0;
+    // A screen that is not shown keeps its stage mounted: stop drawing until it is visible again.
+    let visible = true;
+    const io = new IntersectionObserver(([hit]) => {
+      visible = hit.isIntersecting;
+      if (visible && !raf) raf = requestAnimationFrame(render);
+    });
+    io.observe(canvas);
 
     const render = (now: number) => {
+      if (!visible) {
+        raf = 0;
+        return;
+      }
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       // Fast attack and slow release, like a VU meter.
@@ -210,6 +221,7 @@ export function FluidOrb({ size = 240, color = "#1A73F2", getLevel, className, s
     raf = requestAnimationFrame(render);
 
     return () => {
+      io.disconnect();
       cancelAnimationFrame(raf);
       orb.dispose();
     };

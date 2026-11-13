@@ -9,11 +9,13 @@ import { fileURLToPath } from "node:url";
 import { analyzeFile, applyToBuffer, prepareSteps, runFfmpeg, type EffectStep } from "./core/index.js";
 import { findApiKey, generate, SETUP_HINT, type GenerateRequest } from "./elevenlabs.js";
 import { scanLibrary } from "./library.js";
+import { clearVerdict, readReview, ReviewError, setVerdict } from "./review.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB_DIST = path.join(ROOT, "dist", "web");
 const MAX_PREVIEW_SECONDS = 180;
 const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
+const MAX_REVIEW_BYTES = 64 * 1024;
 
 interface Source {
   id: string;
@@ -273,6 +275,26 @@ export async function startStudio({ port, open }: { port: number; open: boolean 
         return void res.end(wav);
       } catch (error) {
         return json(res, 400, { error: (error as Error).message });
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/api/review") {
+      return json(res, 200, readReview());
+    }
+    const reviewMatch = url.pathname.match(/^\/api\/review\/([\w-]+)$/);
+    if (reviewMatch && (req.method === "PUT" || req.method === "DELETE")) {
+      try {
+        if (req.method === "DELETE") return json(res, 200, clearVerdict(reviewMatch[1]));
+        if (Number(req.headers["content-length"] ?? 0) > MAX_REVIEW_BYTES) return json(res, 413, { error: "The review entry is too large." });
+        let body: unknown;
+        try {
+          body = await readJson<unknown>(req);
+        } catch {
+          return json(res, 400, { error: "The body is not valid JSON." });
+        }
+        return json(res, 200, setVerdict(reviewMatch[1], body));
+      } catch (error) {
+        if (error instanceof ReviewError) return json(res, error.status, { error: error.message });
+        throw error;
       }
     }
     return json(res, 404, { error: "Unknown route." });
