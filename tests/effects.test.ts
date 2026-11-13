@@ -5,6 +5,7 @@ import { makeSignal, nonFinite, render, rmsDb, seconds, sine, tempDir } from "./
 const tmp = tempDir();
 let mixed: string;
 let burst: string;
+let sample: string;
 
 /** Effects that add their own noise or tones from second 0: muted to measure the signal latency. */
 const QUIET_SOURCES: Record<string, Record<string, number>> = {
@@ -16,7 +17,14 @@ const QUIET_SOURCES: Record<string, Record<string, number>> = {
   whoosh: { level: -40 },
   "sub-drop": { level: -40 },
   braam: { level: -40 },
+  layer: { level: -60 },
 };
+
+/** Effects that cannot run on defaults alone: `layer` needs the sample to mix in. */
+const REQUIRED: Record<string, () => Record<string, string>> = {
+  layer: () => ({ file: sample }),
+};
+const required = (id: string) => REQUIRED[id]?.() ?? {};
 
 /**
  * Effects that should change nothing on a test signal with no background noise or stereo image:
@@ -77,6 +85,7 @@ beforeAll(async () => {
     "burst",
     "anoisesrc=d=1:c=pink:a=0.3:r=48000,adelay=delays=500:all=1,apad=pad_dur=0.5",
   );
+  sample = await makeSignal(tmp.dir, "sample", "anoisesrc=d=0.6:c=pink:a=0.5:r=48000:seed=11,afade=t=out:st=0.1:d=0.5");
   mixed = await makeSignal(
     tmp.dir,
     "mixed",
@@ -87,7 +96,7 @@ afterAll(() => tmp.cleanup());
 
 describe("whole catalog", () => {
   it.each(EFFECTS.map((e) => [e.id, e] as const))("%s processes audio without NaN or silence", async (_id, effect) => {
-    const out = await render(mixed, [{ effect: effect.id }]);
+    const out = await render(mixed, [{ effect: effect.id, params: required(effect.id) }]);
     expect(nonFinite(out)).toBe(0);
     expect(rmsDb(out)).toBeGreaterThan(-70);
     if (!effect.changesDuration) {
@@ -101,7 +110,7 @@ describe("whole catalog", () => {
   it.each(EFFECTS.filter((e) => !e.changesDuration).map((e) => [e.id] as const))(
     "%s does not shift the sound onset by more than one frame (24 fps)",
     async (id) => {
-      const out = await render(burst, [{ effect: id, params: QUIET_SOURCES[id] }], { tail: 0 });
+      const out = await render(burst, [{ effect: id, params: { ...required(id), ...QUIET_SOURCES[id] } }], { tail: 0 });
       expect(Math.abs(onset(out) - 0.5)).toBeLessThan(1 / 24);
     },
   );
@@ -110,7 +119,7 @@ describe("whole catalog", () => {
     "%s audibly changes the sound with its defaults",
     async (id) => {
       const dry = await render(mixed, [{ effect: "gain", params: { db: 0 } }], { tail: 0 });
-      const wet = await render(mixed, [{ effect: id }], { tail: 0 });
+      const wet = await render(mixed, [{ effect: id, params: required(id) }], { tail: 0 });
       const levelChange = Math.abs(rmsDb(wet) - rmsDb(dry));
       // Waveform difference with matched level and best alignment: > -20 dB is clearly audible.
       expect(Math.max(residualDb(dry, wet), levelChange > 3 ? 0 : -99)).toBeGreaterThan(-20);

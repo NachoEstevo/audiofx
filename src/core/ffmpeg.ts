@@ -121,6 +121,42 @@ export async function decodeFloat32(input: string, graph?: string): Promise<Floa
   return new Float32Array(stdout.buffer, stdout.byteOffset, stdout.byteLength / 4);
 }
 
+export interface SyncPoints {
+  /** Second where the sound starts: the first 5 ms block above 25% of the loudest one. */
+  onset: number;
+  /** Second of the loudest 5 ms block. */
+  peak: number;
+}
+
+/** Longest stretch measured for sync points: a sample's attack is at its start, not minutes in. */
+const SYNC_SCAN_SECONDS = 60;
+
+/** Where a sample's attack and its loudest point are, so a layer can land on them instead of on leading silence. */
+export function syncPoints(x: Float32Array): SyncPoints {
+  const block = (SAMPLE_RATE / 200) * 2; // 5 ms of interleaved stereo
+  let max = 0;
+  let peak = 0;
+  const env: number[] = [];
+  for (let i = 0; i + block <= x.length; i += block) {
+    let s = 0;
+    for (let j = i; j < i + block; j++) s += x[j] * x[j];
+    env.push(s);
+    if (s > max) {
+      max = s;
+      peak = env.length - 1;
+    }
+  }
+  if (max <= 0) return { onset: 0, peak: 0 };
+  // 25% of the peak amplitude = 1/16 of its energy.
+  const first = env.findIndex((v) => v > max / 16);
+  return { onset: first * 0.005, peak: peak * 0.005 };
+}
+
+export async function measureSync(input: string): Promise<SyncPoints> {
+  const { stdout } = await runFfmpeg(["-v", "error", "-t", String(SYNC_SCAN_SECONDS), "-i", input, "-vn", "-f", "f32le", "-ac", "2", "-ar", String(SAMPLE_RATE), "-"]);
+  return syncPoints(new Float32Array(stdout.buffer, stdout.byteOffset, Math.floor(stdout.byteLength / 4)));
+}
+
 export interface Analysis {
   duration: number;
   integratedLufs: number | null;

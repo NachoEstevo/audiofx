@@ -9,7 +9,8 @@ import path from "node:path";
  *   1. AUDIOFX_LIBRARY (folders separated by ";" on Windows or ":" on Unix), otherwise
  *   2. ~/.audiofx/library.json → { "folders": ["C:/...", ...] }, otherwise
  *   3. ~/Music and ~/Downloads.
- * ~/.audiofx/generated (ElevenLabs generations) is always included.
+ * ~/.audiofx/generated (ElevenLabs generations) and ~/.audiofx/samples (samples fetched from a sound
+ * library, each with a .json next to it: id, title, source) are always included.
  */
 
 export type LibraryKind = "voice" | "music" | "sfx" | "mix";
@@ -23,6 +24,8 @@ export interface LibraryItem {
   modified: number;
   /** Made with ElevenLabs from the studio or `sfx generate`. */
   generated: boolean;
+  /** Lives in ~/.audiofx/samples: a recorded sample to layer. */
+  sample: boolean;
 }
 
 const AUDIO_EXT = new Set([".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".opus", ".aif", ".aiff"]);
@@ -33,6 +36,32 @@ const MAX_DEPTH = 5;
 export const AUDIOFX_HOME = process.env.AUDIOFX_HOME ?? path.join(homedir(), ".audiofx");
 export const CONFIG_FILE = path.join(AUDIOFX_HOME, "library.json");
 export const GENERATED_DIR = path.join(AUDIOFX_HOME, "generated");
+export const SAMPLES_DIR = path.join(AUDIOFX_HOME, "samples");
+
+/** The .json next to a sample: where it came from. Licensed audio stays out of the repo; this is its only record. */
+export interface SampleMeta {
+  id?: string;
+  title?: string;
+  /** Where it came from, e.g. "epidemic-sound", "elevenlabs", "local". */
+  source?: string;
+  kind?: LibraryKind;
+  duration?: number;
+  onset?: number;
+  peak?: number;
+  added?: string;
+}
+
+const SOURCE_LABELS: Record<string, string> = { "epidemic-sound": "Epidemic Sound", elevenlabs: "ElevenLabs", local: "Samples" };
+const KINDS = new Set<string>(["voice", "music", "sfx", "mix"]);
+
+export function sampleMeta(file: string): SampleMeta {
+  try {
+    const meta = JSON.parse(readFileSync(file.replace(/\.[^.]+$/, ".json"), "utf8")) as SampleMeta;
+    return meta && typeof meta === "object" ? meta : {};
+  } catch {
+    return {};
+  }
+}
 
 export function libraryFolders(): string[] {
   const env = process.env.AUDIOFX_LIBRARY;
@@ -89,7 +118,9 @@ export function scanLibrary(): { items: LibraryItem[]; paths: Map<string, string
   const folders = libraryFolders();
   const found: (LibraryItem & { file: string })[] = [];
 
-  const walk = (dir: string, depth: number, root: string, generated: boolean) => {
+  type Origin = "generated" | "sample" | "folder";
+  const walk = (dir: string, depth: number, root: string, origin: Origin) => {
+    const generated = origin === "generated";
     if (depth > MAX_DEPTH || found.length >= MAX_ITEMS * 2) return;
     let entries;
     try {
@@ -102,7 +133,7 @@ export function scanLibrary(): { items: LibraryItem[]; paths: Map<string, string
       // isSymbolicLink first: junctions and links to other folders are never followed.
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.test(entry.name)) walk(full, depth + 1, root, generated);
+        if (!SKIP_DIRS.test(entry.name)) walk(full, depth + 1, root, origin);
       } else if (entry.isFile() && AUDIO_EXT.has(path.extname(entry.name).toLowerCase())) {
         let st;
         try {
@@ -111,24 +142,34 @@ export function scanLibrary(): { items: LibraryItem[]; paths: Map<string, string
           continue;
         }
         // Generated sound effects can be tiny; files picked up from regular folders must be real audio.
-        if (!generated && st.size < 60 * 1024) continue;
+        if (origin === "folder" && st.size < 60 * 1024) continue;
+        const base = path.basename(entry.name, path.extname(entry.name));
+        const meta = origin === "sample" ? sampleMeta(full) : null;
         found.push({
           id: createHash("sha1").update(full).digest("hex").slice(0, 12),
-          name: (generated && promptOf(full)) || path.basename(entry.name, path.extname(entry.name)),
-          folder: generated ? "ElevenLabs" : shortFolder(root, dir),
-          kind: generated ? generatedKind(entry.name) : classify(full, st.size),
+          name: (generated && promptOf(full)) || (typeof meta?.title === "string" && meta.title.trim()) || base,
+          folder: generated ? "ElevenLabs" : meta ? (SOURCE_LABELS[meta.source ?? "local"] ?? String(meta.source)) : shortFolder(root, dir),
+          // A sample is an effect unless its .json says otherwise (a music bed, a voice).
+          kind: generated ? generatedKind(entry.name) : meta ? (KINDS.has(String(meta.kind)) ? meta.kind! : "sfx") : classify(full, st.size),
           sizeMb: Math.round((st.size / 1024 / 1024) * 10) / 10,
           modified: st.mtimeMs,
           generated,
+          sample: origin === "sample",
           file: full,
         });
       }
     }
   };
-  if (existsSync(GENERATED_DIR)) walk(GENERATED_DIR, 0, GENERATED_DIR, true);
-  for (const folder of folders) if (existsSync(folder)) walk(folder, 0, folder, false);
+  if (existsSync(GENERATED_DIR)) walk(GENERATED_DIR, 0, GENERATED_DIR, "generated");
+  if (existsSync(SAMPLES_DIR)) walk(SAMPLES_DIR, 0, SAMPLES_DIR, "sample");
+  // A configured folder may contain ~/.audiofx: its files are already listed.
+  const seen = new Set(found.map((f) => f.file));
+  for (const folder of folders) if (existsSync(folder)) walk(folder, 0, folder, "folder");
+  for (let i = found.length - 1; i >= 0; i--) {
+    if (!found[i].generated && !found[i].sample && seen.has(found[i].file)) found.splice(i, 1);
+  }
 
-  found.sort((a, b) => Number(b.generated) - Number(a.generated) || ORDER[a.kind] - ORDER[b.kind] || b.modified - a.modified);
+  found.sort((a, b) => Number(b.generated) - Number(a.generated) || Number(b.sample) - Number(a.sample) || ORDER[a.kind] - ORDER[b.kind] || b.modified - a.modified);
   const kept = found.slice(0, MAX_ITEMS);
   return {
     items: kept.map(({ file: _file, ...item }) => item),

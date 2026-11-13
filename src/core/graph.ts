@@ -7,6 +7,16 @@ export function n(value: number, digits = 4): string {
   return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") || "0" : fixed;
 }
 
+/**
+ * A file path as the value of a filter option inside a filtergraph (e.g. `amovie=filename=<path>`).
+ * The graph parser and the filter's own option parser each strip one level of escaping, so every special
+ * character is escaped twice. Windows paths use forward slashes, which ffmpeg accepts.
+ */
+export function filterPath(file: string): string {
+  const windows = /^[A-Za-z]:[\\/]/.test(file) || file.startsWith("\\\\");
+  return (windows ? file.replace(/\\/g, "/") : file).replace(/[\\:'[\],;= ]/g, (c) => `\\\\\\${c}`);
+}
+
 /** A linear chain: [in]f1,f2,...[out]. */
 export function chain(input: string, output: string, filters: string[]): string {
   const body = filters.length ? filters.join(",") : "anull";

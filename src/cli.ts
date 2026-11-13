@@ -9,6 +9,7 @@ import {
   compile,
   getEffect,
   parseStep,
+  prepareSteps,
   resolveFfmpeg,
   runFfmpeg,
   type Category,
@@ -17,6 +18,8 @@ import {
 } from "./core/index.js";
 import { catalogMarkdown } from "./catalog-markdown.js";
 import { findApiKey, generate, SETUP_HINT, type GenerateKind } from "./elevenlabs.js";
+import type { LibraryKind } from "./library.js";
+import { addSample, libraryResolver, listSamples } from "./samples.js";
 
 const HELP = `sfx — sound design effects for video (ffmpeg filtergraphs)
 
@@ -27,6 +30,9 @@ Usage:
   sfx apply <input> <output> <step...>          Processes a file (audio or video)
   sfx generate <sfx|voice|music> "<prompt>" <output> [step...]
                                                 Generates with ElevenLabs, then applies the steps
+  sfx sample add <file|url> [--title --id --source --kind]
+                                                Keeps a recorded sample in ~/.audiofx/samples to layer it
+  sfx sample list [--json]                      Your samples and the library:<id> to use them
   sfx analyze <file> [--json]                   Loudness (LUFS), true peak, peak, RMS, duration
   sfx studio [--port 5177] [--no-open]          Opens the web studio to listen and tweak
   sfx catalog                                   Catalog as Markdown (for the skill)
@@ -36,6 +42,7 @@ Step format:  effect[:param=value,param=value][@from-to]
   underwater:depth=0.8@3.2-7      underwater between 3.2 s and 7 s
   reverb:space=cathedral,mix=0.4  reverb on the whole audio
   hit:at=6                        a trailer hit at 6 s
+  layer:file=door.wav,at=6,align=onset   a recorded sample whose attack lands at 6 s
   am-radio                        default params
 
 apply and graph options:
@@ -45,6 +52,12 @@ apply and graph options:
   --tail <s>               Silence added for reverb/echo tails (default 3 when needed, 0 otherwise)
   --seed <n>               Seed for noises and IRs (default 1234)
   --start <s> --duration <s>   Trims the input before processing (apply only)
+
+sample add options (samples are licensed audio: they stay in ~/.audiofx/samples, never in a repo):
+  --title <text>           Name shown in the studio and in \`sample list\`
+  --id <id>                Id in the library it came from (kept in the .json next to the file)
+  --source <name>          epidemic-sound, elevenlabs, local (default) or any other name
+  --kind <sfx|music|voice> Default sfx
 
 generate options (needs ELEVENLABS_API_KEY; generations are also kept in ~/.audiofx/generated):
   --duration <s>           sfx: 0.5–30 s (default: the model decides) · music: 3–600 s
@@ -74,6 +87,10 @@ const { values, positionals } = parseArgs({
     voice: { type: "string" },
     model: { type: "string" },
     instrumental: { type: "boolean" },
+    title: { type: "string" },
+    id: { type: "string" },
+    source: { type: "string" },
+    kind: { type: "string" },
     port: { type: "string" },
     "no-open": { type: "boolean" },
     help: { type: "boolean", short: "h" },
@@ -102,12 +119,16 @@ function stepsFrom(specs: string[], required = true): EffectStep[] {
   return steps.map((s) => ({ ...s, fade: s.fade ?? fade, mix: s.mix ?? mix }));
 }
 
+/** Resolves sample files and library references, and measures the sync points a layer asks for. */
+const prepared = (steps: EffectStep[]) => prepareSteps(steps, { resolveLibrary: libraryResolver() });
+
 function compileOptions() {
   return { tail: num(values.tail, "tail"), seed: num(values.seed, "seed") };
 }
 
 function formatParam(p: EffectInfo["params"][number]): string {
   if (p.type === "number") return `${p.id}=${p.default}  (${p.min}–${p.max}${p.unit ? " " + p.unit : ""})  ${p.label}`;
+  if (p.type === "file") return `${p.id}=<path | library:id>  ${p.label}`;
   if (p.type === "enum") return `${p.id}=${p.default}  (${p.options.join(" | ")})  ${p.label}`;
   return `${p.id}=${p.default}  (true | false)  ${p.label}`;
 }
@@ -152,7 +173,7 @@ async function main() {
       return;
     }
     case "graph": {
-      const compiled = compile(stepsFrom(args), compileOptions());
+      const compiled = compile(await prepared(stepsFrom(args)), compileOptions());
       if (values.json) return console.log(JSON.stringify(compiled, null, 2));
       return console.log(compiled.graph);
     }
@@ -160,7 +181,7 @@ async function main() {
       const [input, output, ...specs] = args;
       if (!input || !output) throw new Error("Usage: sfx apply <input> <output> <step...>");
       const t = Date.now();
-      const compiled = await applyToFile(input, output, stepsFrom(specs), {
+      const compiled = await applyToFile(input, output, await prepared(stepsFrom(specs)), {
         ...compileOptions(),
         start: num(values.start, "start"),
         duration: num(values.duration, "duration"),
@@ -172,7 +193,7 @@ async function main() {
       if (!["sfx", "voice", "music"].includes(kind) || !prompt || !output) {
         throw new Error('Usage: sfx generate <sfx|voice|music> "<prompt>" <output> [step...]');
       }
-      const steps = stepsFrom(specs, false);
+      const steps = await prepared(stepsFrom(specs, false));
       // Validate the chain before spending credits on a generation.
       if (steps.length) compile(steps, compileOptions());
       const t = Date.now();
@@ -195,6 +216,28 @@ async function main() {
       else await runFfmpeg(["-y", "-v", "error", "-i", gen.file, "-ar", "48000", output]);
       return report(output, t, { generated: gen.file });
     }
+    case "sample": {
+      const [action, from] = args;
+      if (action === "list") {
+        const samples = listSamples();
+        if (values.json) return console.log(JSON.stringify(samples, null, 2));
+        if (!samples.length) return console.log("No samples yet. Add one with `sfx sample add <file|url> --title \"...\"`.");
+        for (const s of samples) {
+          const timing = s.duration !== undefined ? `${s.duration.toFixed(2)} s, attack at ${(s.onset ?? 0).toFixed(3)} s` : "not measured";
+          console.log(`${s.ref}  ${s.title}  (${s.source ?? "local"} · ${s.kind} · ${timing})
+    ${s.file}`);
+        }
+        return;
+      }
+      if (action !== "add" || !from) throw new Error('Usage: sfx sample add <file|url> [--title "..."] [--id <id>] [--source <name>] [--kind sfx|music|voice]  ·  sfx sample list');
+      if (values.kind && !["sfx", "music", "voice"].includes(values.kind)) throw new Error("--kind must be sfx, music or voice.");
+      const sample = await addSample({ from, title: values.title, id: values.id, source: values.source, kind: values.kind as LibraryKind | undefined });
+      if (values.json) return console.log(JSON.stringify(sample, null, 2));
+      console.log(`✔ ${sample.title} → ${sample.file}`);
+      console.log(`  ${sample.duration?.toFixed(2)} s, attack at ${sample.onset?.toFixed(3)} s, loudest at ${sample.peak?.toFixed(3)} s`);
+      console.log(`  Use it: "layer:file=${sample.ref},at=<s>,align=onset"`);
+      return;
+    }
     case "analyze": {
       if (!args[0]) throw new Error("Usage: sfx analyze <file>");
       const a = await analyzeFile(args[0]);
@@ -210,7 +253,7 @@ async function main() {
       const ffmpeg = resolveFfmpeg();
       const { stdout } = await runFfmpeg(["-filters"]);
       const text = stdout.toString();
-      const needed = ["afir", "rubberband", "asendcmd", "acrusher", "asoftclip", "afreqshift", "loudnorm", "chorus", "anoisesrc", "aevalsrc", "aeval"];
+      const needed = ["amovie", "afir", "rubberband", "asendcmd", "acrusher", "asoftclip", "afreqshift", "loudnorm", "chorus", "anoisesrc", "aevalsrc", "aeval"];
       const missing = needed.filter((f) => !new RegExp(`\\s${f}\\s`).test(text));
       const version = (await runFfmpeg(["-version"])).stdout.toString().split("\n")[0];
       console.log(`ffmpeg: ${ffmpeg}\n${version}`);

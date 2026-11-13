@@ -2,6 +2,7 @@ import { cinemaEffects } from "./effects/cinema.js";
 import { dynamicsEffects } from "./effects/dynamics.js";
 import { eraEffects } from "./effects/era.js";
 import { filterEffects } from "./effects/filters.js";
+import { layerEffects } from "./effects/layer.js";
 import { modulationEffects } from "./effects/modulation.js";
 import { narrativeEffects, transitionEffects } from "./effects/narrative.js";
 import { spaceEffects } from "./effects/space.js";
@@ -9,6 +10,7 @@ import type { EffectDefinition, ParamSpec, Params, ParamValue } from "./types.js
 
 export const EFFECTS: readonly EffectDefinition[] = [
   ...cinemaEffects,
+  ...layerEffects,
   ...filterEffects,
   ...spaceEffects,
   ...eraEffects,
@@ -56,6 +58,8 @@ function coerce(spec: ParamSpec, raw: ParamValue): ParamValue {
       if (["false", "0", "no", "off"].includes(s)) return false;
       throw new Error(`"${spec.id}" must be true or false (got ${JSON.stringify(raw)}).`);
     }
+    case "file":
+      return String(raw).trim();
   }
 }
 

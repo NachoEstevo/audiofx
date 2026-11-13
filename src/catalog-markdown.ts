@@ -23,8 +23,8 @@ export function catalogMarkdown(): string {
         lines.push("| Param | Default | Range |", "| --- | --- | --- |");
         for (const p of e.params) {
           const range =
-            p.type === "number" ? `${p.min}–${p.max}${p.unit ? " " + p.unit : ""}` : p.type === "enum" ? p.options.join(", ") : "true, false";
-          lines.push(`| \`${p.id}\` ${p.label} | ${p.default} | ${range} |`);
+            p.type === "number" ? `${p.min}–${p.max}${p.unit ? " " + p.unit : ""}` : p.type === "enum" ? p.options.join(", ") : p.type === "file" ? "a path, or `library:<id>`" : "true, false";
+          lines.push(`| \`${p.id}\` ${p.label} | ${p.type === "file" ? "(required)" : p.default} | ${range} |`);
         }
         lines.push("");
       }

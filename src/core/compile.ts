@@ -83,21 +83,29 @@ export function compile(steps: EffectStep[], options: CompileOptions = {}): Comp
 
 /** Parses "effect:param=value,param=value@from-to" (the CLI short form). */
 export function parseStep(spec: string): EffectStep {
-  const [left, window] = spec.split("@");
-  const [effect, paramText] = left.split(":");
+  // The window is only the trailing "@from-to": a file path may hold "@", ":" and "-" of its own.
+  const window = /@(\d+(?:\.\d+)?)?-(\d+(?:\.\d+)?)?$/.exec(spec);
+  const left = window ? spec.slice(0, window.index) : spec;
+  const colon = left.indexOf(":");
+  const effect = (colon < 0 ? left : left.slice(0, colon)).trim();
   const params: Record<string, string> = {};
-  if (paramText) {
-    for (const pair of paramText.split(",")) {
-      const [k, v] = pair.split("=");
-      if (!k || v === undefined) throw new Error(`Malformed param in "${spec}". Use key=value.`);
-      params[k.trim()] = v.trim();
+  let last: string | undefined;
+  if (colon >= 0 && left.slice(colon + 1)) {
+    for (const piece of left.slice(colon + 1).split(",")) {
+      const pair = /^\s*([A-Za-z][\w-]*)=(.*)$/s.exec(piece);
+      if (pair) {
+        last = pair[1];
+        params[last] = pair[2].trim();
+      } else if (last !== undefined && piece) {
+        // A comma inside a value (a file name): it belongs to the previous param.
+        params[last] += `,${piece}`;
+      } else {
+        throw new Error(`Malformed param in "${spec}". Use key=value.`);
+      }
     }
   }
-  const step: EffectStep = { effect: effect.trim(), params };
-  if (window) {
-    const [from, to] = window.split("-").map((x) => (x === "" ? undefined : Number(x)));
-    if (from !== undefined) step.from = from;
-    if (to !== undefined) step.to = to;
-  }
+  const step: EffectStep = { effect, params };
+  if (window?.[1] !== undefined) step.from = Number(window[1]);
+  if (window?.[2] !== undefined) step.to = Number(window[2]);
   return step;
 }

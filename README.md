@@ -5,7 +5,7 @@
 # AudioFX
 
 **Sound design for video, as plain ffmpeg filtergraphs.**
-61 effects, from underwater, old radio and phone calls to trailer hits, risers and whooshes,
+62 effects, from underwater, old radio and phone calls to trailer hits, risers and whooshes,
 built so coding agents (and people) can use them when they put a video together.
 
 </div>
@@ -15,7 +15,7 @@ built so coding agents (and people) can use them when they put a video together.
 ## Why
 
 - **One string, any pipeline.** Every effect compiles to a filtergraph you pass straight to `ffmpeg -af`. It works from the CLI, Python, Remotion or your own render script, and what you hear in the studio is exactly what renders.
-- **Made for moments.** Cinema elements (hit, riser, whoosh, sub drop, braam, a gap before the drop, a cut with a tail) are synthesized and land on the exact second you mark. No licensed samples.
+- **Made for moments.** Cinema elements (hit, riser, whoosh, sub drop, braam, a gap before the drop, a cut with a tail) are synthesized and land on the exact second you mark, with no licensed samples in the repo. When a recorded sound works better, `layer` mixes your own sample in at that second, attack first.
 - **Agents know when to use what.** Each effect ships with a description and "when to use it", and two skills teach Claude Code and Codex how to pick, chain and mix them.
 - **ElevenLabs built in.** Generate a sound effect, a voice or a song from a prompt and run it through any effect in one step.
 
@@ -40,6 +40,7 @@ The studio opens at `http://127.0.0.1:5177`. Pick an audio, tap a sound to hear 
 sfx apply voice.wav call.wav telephone
 sfx apply clip.mp4 clip-fx.mp4 "underwater:depth=0.8@3.2-7" loudness
 sfx apply mix.wav mix-hit.wav "riser:at=6" "drop-gap:at=5.55" "hit:at=6"
+sfx apply mix.wav mix-door.wav "layer:file=door.wav,at=6,align=onset"   # a recorded sample on the cut
 sfx graph "reverb:space=cathedral,mix=0.4"     # just the filtergraph
 sfx list                                       # the catalog
 sfx describe am-radio                          # params and when to use it
@@ -77,6 +78,17 @@ The studio lists the audio in `~/Music` and `~/Downloads`. To use other folders,
 ```json
 { "folders": ["C:/Users/you/Videos/media", "D:/Projects/sounds"] }
 ```
+
+### Samples
+
+Recorded sounds you want to layer (from a sound library subscription, a generation, your own recordings) go in `~/.audiofx/samples`, each with a small `.json` that records where it came from:
+
+```bash
+sfx sample add door.wav --title "Door slam, heavy wood"
+sfx sample list
+```
+
+They show up in the studio's *Samples* tab, and the moments can use one instead of the synthesized impact or whoosh. Samples stay on your machine: the repo's `.gitignore` excludes audio, and the studio only ever handles library ids, never paths.
 
 ## Development
 

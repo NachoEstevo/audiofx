@@ -2,7 +2,7 @@
 
 <!-- Generated with `pnpm catalog`. Do not edit by hand: the source is src/core/effects. -->
 
-61 effects. CLI step format: `effect:param=value,param=value@from-to`. Effects marked _at a moment_ are anchored with `at=<seconds>`.
+62 effects. CLI step format: `effect:param=value,param=value@from-to`. Effects marked _at a moment_ are anchored with `at=<seconds>`.
 
 ## Cinema & trailer
 
@@ -140,6 +140,23 @@ An old interview or speech recording: mono, narrowed band, wobbly tape, hiss and
 | --- | --- | --- |
 | `age` Age | 0.6 | 0–1 |
 | `noise` Hiss | 0.4 | 0–1 |
+
+### `layer` — Sample layer _(at a moment, adds tail)_
+
+Mixes an audio file (a recorded sample, a generation, any local file) into the signal at an exact second.
+
+**When:** When a recorded sound beats a synthesized one: a real impact on the cut, a door, glass, a whoosh, an ambience bed. Use align=onset so the sample's attack, not its leading silence, lands on `at`.
+
+| Param | Default | Range |
+| --- | --- | --- |
+| `file` Sample | (required) | a path, or `library:<id>` |
+| `at` Moment | 1 | 0–600 s |
+| `level` Level | 0 | -60–12 dB |
+| `align` Align | start | start, onset, peak |
+| `sync` Sync point | 0 | 0–600 s |
+| `length` Length | 0 | 0–600 s |
+| `fadeIn` Fade in | 0 | 0–10 s |
+| `fadeOut` Fade out | 0 | 0–10 s |
 
 ## Filters & EQ
 

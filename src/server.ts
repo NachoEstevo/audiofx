@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { analyzeFile, applyToBuffer, runFfmpeg, type EffectStep } from "./core/index.js";
+import { analyzeFile, applyToBuffer, prepareSteps, runFfmpeg, type EffectStep } from "./core/index.js";
 import { findApiKey, generate, SETUP_HINT, type GenerateRequest } from "./elevenlabs.js";
 import { scanLibrary } from "./library.js";
 
@@ -266,7 +266,9 @@ export async function startStudio({ port, open }: { port: number; open: boolean 
       if (!source) return json(res, 404, { error: "Source not found. Load the file again." });
       try {
         const t = Date.now();
-        const wav = await applyToBuffer(source.file, body.steps, { tail: body.tail, seed: body.seed });
+        // Samples arrive as library ids: only files the scan listed are read, never a path from the client.
+        const steps = await prepareSteps(body.steps, { resolveLibrary: (id) => library.paths.get(id), libraryOnly: true });
+        const wav = await applyToBuffer(source.file, steps, { tail: body.tail, seed: body.seed });
         res.writeHead(200, { "content-type": "audio/wav", "content-length": wav.length, "x-render-ms": String(Date.now() - t) });
         return void res.end(wav);
       } catch (error) {

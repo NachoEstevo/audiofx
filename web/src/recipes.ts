@@ -20,9 +20,18 @@ export interface Sound {
   /** true when it depends on the marked moment (hits, risers, cuts). */
   timed: boolean;
   steps: RecipeStep[];
-  group: "moments" | "treatments" | "effects";
+  group: "moments" | "treatments" | "effects" | "samples";
   category?: Category;
 }
+
+/** The synthesized elements of a moment that a recorded sample can replace. */
+export type Slot = "impact" | "whoosh";
+export type Slots = Record<Slot, string | null>;
+export const SLOT_LABELS: Record<Slot, string> = { impact: "Impact", whoosh: "Whoosh" };
+const SLOT_OF: Record<string, Slot> = { hit: "impact", braam: "impact", whoosh: "whoosh" };
+
+/** A library file as a `layer` param: the server turns the id into a path. */
+export const libraryRef = (id: string) => `library:${id}`;
 
 export const CATEGORY_COLORS: Record<Category, string> = {
   cinema: "#F75001",
@@ -123,12 +132,26 @@ const TREATMENTS: Omit<Sound, "group" | "timed">[] = [
   },
 ];
 
+/** A sample from the library as a sound: it lands on the marked moment, attack first. */
+export function sampleSound(item: { id: string; name: string; folder: string }): Sound {
+  return {
+    id: `s-${item.id}`,
+    name: item.name,
+    hint: item.folder,
+    color: CATEGORY_COLORS.cinema,
+    timed: true,
+    group: "samples",
+    steps: [{ effect: "layer", at: 0, params: { file: libraryRef(item.id), align: "onset" } }],
+  };
+}
+
 const isTimed = (steps: RecipeStep[]) => steps.some((s) => s.at !== undefined || s.window !== undefined);
 
 export const SOUNDS: Sound[] = [
   ...MOMENTS.map((m) => ({ ...m, group: "moments" as const, timed: isTimed(m.steps) })),
   ...TREATMENTS.map((t) => ({ ...t, group: "treatments" as const, timed: isTimed(t.steps) })),
-  ...EFFECTS.map((e) => ({
+  // Effects that need a file (layer) are not tiles: each sample is one, in its own tab.
+  ...EFFECTS.filter((e) => !e.params.some((p) => p.type === "file")).map((e) => ({
     id: `e-${e.id}`,
     name: e.name,
     hint: e.description,
@@ -140,13 +163,26 @@ export const SOUNDS: Sound[] = [
   })),
 ];
 
-export const GROUP_LABELS = { moments: "Moments", treatments: "Treatments", effects: "All effects" } as const;
+export const GROUP_LABELS = { moments: "Moments", treatments: "Treatments", effects: "All effects", samples: "Samples" } as const;
 export { CATEGORY_LABELS };
 
-/** Turns a recipe into absolute steps for the marked moment. */
-export function stepsAt(steps: RecipeStep[], moment: number, duration: number): EffectStep[] {
+/**
+ * Turns a recipe into absolute steps for the marked moment. With a sample chosen for a slot, the
+ * synthesized hit, braam or whoosh becomes a `layer` of that sample: an impact lands by its attack, a
+ * whoosh by its loudest point (the synthesized one also peaks on the moment).
+ */
+export function stepsAt(steps: RecipeStep[], moment: number, duration: number, slots?: Slots): EffectStep[] {
   const clampT = (t: number) => Math.max(0, Math.min(Math.max(0, duration), t));
-  return steps.map((s) => {
+  return steps.map((recipe) => {
+    const slot = SLOT_OF[recipe.effect];
+    const sample = slot && slots?.[slot];
+    const s: RecipeStep = sample
+      ? {
+          effect: "layer",
+          at: recipe.at,
+          params: { file: libraryRef(sample), align: slot === "whoosh" ? "peak" : "onset", level: recipe.params?.level ?? 0 },
+        }
+      : recipe;
     const step: EffectStep = { effect: s.effect, params: { ...s.params } };
     if (s.at !== undefined) step.params!.at = Math.round(clampT(moment + s.at) * 100) / 100;
     if (s.window) {

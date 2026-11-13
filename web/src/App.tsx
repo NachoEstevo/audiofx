@@ -4,7 +4,7 @@ import { compile } from "../../src/core/compile";
 import { getEffect, resolveParams } from "../../src/core/registry";
 import type { EffectStep, ParamValue } from "../../src/core/types";
 import { ChainDrawer } from "@/components/chain-drawer";
-import { StepCard, type Step } from "@/components/chain";
+import { StepCard, type SampleOption, type Step } from "@/components/chain";
 import { ExportPanel } from "@/components/export-panel";
 import { Logo } from "@/components/logo";
 import { SoundGrid } from "@/components/sound-grid";
@@ -12,7 +12,7 @@ import { SourcePicker, type LibraryItem, type SourceRef } from "@/components/sou
 import { Stage, type RenderState } from "@/components/stage";
 import { Button } from "@/components/ui/button";
 import { Player } from "./player";
-import { CATEGORY_COLORS, stepsAt, type Sound } from "./recipes";
+import { CATEGORY_COLORS, sampleSound, stepsAt, type Slot, type Slots, type Sound } from "./recipes";
 
 interface Source {
   id: string;
@@ -54,6 +54,7 @@ export function App() {
   const [chain, setChain] = useState<Step[]>([]);
   const [selected, setSelected] = useState<Sound | null>(null);
   const [moment, setMoment] = useState(0);
+  const [slots, setSlots] = useState<Slots>({ impact: null, whoosh: null });
   const [render, setRender] = useState<RenderState>({ status: "idle" });
   const [loading, setLoading] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -71,16 +72,27 @@ export function App() {
   }, [player]);
 
   const duration = source?.duration ?? 0;
+  // Recorded effects to layer: fetched samples, ElevenLabs sound effects and effects found in your folders.
+  const sampleOptions = useMemo<SampleOption[]>(
+    () => (library?.items ?? []).filter((i) => i.kind === "sfx").map(({ id, name, folder }) => ({ id, name, folder })),
+    [library],
+  );
+  const samples = useMemo(() => sampleOptions.map(sampleSound), [sampleOptions]);
+  // A slot whose sample left the library falls back to the synthesized sound.
+  const liveSlots = useMemo<Slots>(() => {
+    const live = (id: string | null) => (id && sampleOptions.some((s) => s.id === id) ? id : null);
+    return { impact: live(slots.impact), whoosh: live(slots.whoosh) };
+  }, [slots, sampleOptions]);
   const chainSteps = useMemo(() => fromSteps(chain), [chain]);
   const heard = useMemo(() => {
-    const steps = [...chainSteps, ...(selected ? stepsAt(selected.steps, moment, duration) : [])];
+    const steps = [...chainSteps, ...(selected ? stepsAt(selected.steps, moment, duration, liveSlots) : [])];
     try {
       if (steps.length) compile(steps);
       return { steps, error: null as string | null };
     } catch (error) {
       return { steps: [] as EffectStep[], error: (error as Error).message };
     }
-  }, [chainSteps, selected, moment, duration]);
+  }, [chainSteps, selected, moment, duration, liveSlots]);
 
   // Render (or hit the cache) whenever what you hear changes.
   useEffect(() => {
@@ -238,7 +250,7 @@ export function App() {
 
   const addSound = (sound: Sound) => {
     try {
-      const steps = stepsAt(sound.steps, moment, duration).map(toStep);
+      const steps = stepsAt(sound.steps, moment, duration, liveSlots).map(toStep);
       setChain((list) => [...list, ...steps]);
       if (selected?.id === sound.id) setSelected(null);
       playAfter.current = { seek: sound.timed ? Math.max(0, moment - 2.5) : null };
@@ -250,7 +262,7 @@ export function App() {
 
   /** Commits the sound being previewed (so it stays before the limiter) and adds a safety limiter last. */
   const addLimiter = () => {
-    const previewed = selected ? stepsAt(selected.steps, moment, duration).map(toStep) : [];
+    const previewed = selected ? stepsAt(selected.steps, moment, duration, liveSlots).map(toStep) : [];
     setChain((list) => [...list, ...previewed, toStep({ effect: "limiter" })]);
     setSelected(null);
     showToast(selected ? `${selected.name} and a limiter added to your chain` : "Limiter added at the end of your chain");
@@ -401,6 +413,10 @@ export function App() {
             busy={render.status === "rendering"}
             revealKeys={revealKeys}
             getLevel={getLevel}
+            samples={samples}
+            sampleOptions={sampleOptions}
+            slots={liveSlots}
+            onSlot={(slot: Slot, id) => setSlots((s) => ({ ...s, [slot]: id }))}
             onSelect={selectSound}
             onAdd={addSound}
             onVisible={(s) => {
@@ -422,6 +438,7 @@ export function App() {
                 total={chain.length}
                 duration={duration || 10}
                 moment={moment}
+                samples={sampleOptions}
                 onParam={(id, v) => setParam(step.key, id, v)}
                 onUpdate={(patch) => edit(step.key, patch)}
                 onMove={(d) => move(index, d)}

@@ -2,7 +2,8 @@ import { Crosshair, Plus, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { CATEGORY_LABELS, type Category } from "../../../src/core/types";
-import { GROUP_LABELS, SOUNDS, type Sound } from "../recipes";
+import { GROUP_LABELS, SLOT_LABELS, SOUNDS, type Slot, type Slots, type Sound } from "../recipes";
+import { SamplePicker, type SampleOption } from "@/components/chain";
 import { OrbSwatch, type SwatchMode } from "@/components/ui/orb-swatch";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,11 @@ export function SoundGrid(props: {
   busy: boolean;
   revealKeys: boolean;
   getLevel: () => number;
+  /** Library samples: each one is a tile in the Samples tab and a choice for the moments' slots. */
+  samples: Sound[];
+  sampleOptions: SampleOption[];
+  slots: Slots;
+  onSlot: (slot: Slot, id: string | null) => void;
   onSelect: (sound: Sound) => void;
   onAdd: (sound: Sound) => void;
   onVisible: (sounds: Sound[]) => void;
@@ -27,7 +33,7 @@ export function SoundGrid(props: {
   const [category, setCategory] = useState<Category | "all">("all");
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const visible = SOUNDS.filter(
+  const visible = [...SOUNDS, ...props.samples].filter(
     (s) =>
       (q ? true : s.group === group) &&
       (group !== "effects" || q || category === "all" || s.category === category) &&
@@ -43,7 +49,7 @@ export function SoundGrid(props: {
   return (
     <section aria-label="Sounds">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex rounded-full bg-muted p-1" role="tablist">
+        <div className="no-scrollbar relative flex max-w-full overflow-x-auto rounded-full bg-muted p-1" role="tablist">
           {GROUPS.map((g) => (
             <button
               key={g}
@@ -109,6 +115,23 @@ export function SoundGrid(props: {
         </div>
       )}
 
+      {group === "moments" && !q && props.sampleOptions.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+          {(Object.keys(SLOT_LABELS) as Slot[]).map((slot) => (
+            <label key={slot} className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:max-w-[17rem]">
+              <span className="w-14 shrink-0 text-muted-foreground sm:w-auto">{SLOT_LABELS[slot]}</span>
+              <SamplePicker
+                label={`${SLOT_LABELS[slot]} sound for the moments`}
+                value={props.slots[slot] ?? ""}
+                samples={props.sampleOptions}
+                empty="Synthesized"
+                onChange={(id) => props.onSlot(slot, id || null)}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+
       <div key={`${group}-${category}-${q ? "q" : ""}`} className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
         {visible.map((sound, i) => (
           <Tile
@@ -123,7 +146,13 @@ export function SoundGrid(props: {
             onAdd={() => props.onAdd(sound)}
           />
         ))}
-        {!visible.length && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">Nothing matches “{query}”.</p>}
+        {!visible.length && (
+          <p className="col-span-full mx-auto max-w-md py-10 text-center text-sm text-pretty text-muted-foreground">
+            {q
+              ? `Nothing matches “${query}”.`
+              : "No samples yet. Add recorded sounds with `sfx sample add`, ask your agent to fetch one from your sound library, or generate a sound with ElevenLabs. Samples are kept in ~/.audiofx/samples."}
+          </p>
+        )}
       </div>
     </section>
   );
@@ -168,10 +197,11 @@ function Tile(props: {
         "focus-visible:shadow-[0_0_0_2px_var(--color-foreground)]",
       )}
       style={{ animationDelay: `${Math.min(props.index, 16) * 18}ms` }}
-      title={sound.steps.map((s) => s.effect).join(" + ")}
+      title={sound.group === "samples" ? sound.name : sound.steps.map((s) => s.effect).join(" + ")}
     >
       <OrbSwatch color={sound.color} seed={sound.id} size={36} mode={mode} getLevel={active ? props.getLevel : undefined} />
-      <span className="mt-2.5 line-clamp-1 text-[14px] leading-snug font-medium">{sound.name}</span>
+      {/* A sample is told apart by its name: give it two lines. */}
+      <span className={cn("mt-2.5 text-[14px] leading-snug font-medium", sound.group === "samples" ? "line-clamp-2 pr-5" : "line-clamp-1")}>{sound.name}</span>
       <span className="mt-0.5 line-clamp-2 pr-7 text-xs leading-snug text-pretty text-muted-foreground lg:pr-0">{sound.hint}</span>
       {sound.timed && (
         <span className="absolute top-3 right-3 text-muted-foreground" title="Lands on the moment marked on the waveform">

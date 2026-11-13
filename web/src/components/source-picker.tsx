@@ -10,6 +10,7 @@ export interface LibraryItem {
   kind: "voice" | "music" | "sfx" | "mix";
   sizeMb: number;
   generated: boolean;
+  sample: boolean;
 }
 
 export type SourceRef = { type: "library"; id: string } | { type: "demo"; kind: string } | { type: "upload" } | { type: "generate"; request: GenerateRequest };

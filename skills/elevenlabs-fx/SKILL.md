@@ -69,14 +69,14 @@ Other moment-based treatments on a song: `"am-radio@0-8" --fade 1.2` (plays from
 
 ### A sound effect layered at a cut
 
-Generate the effect, then mix it into the video's audio at the cut (here 6.0 s):
+Generate the effect, then mix it into the video's audio at the cut (here 6.0 s) with the `layer` effect:
 
 ```bash
 sfx generate sfx "Heavy wooden door slams in a stone hallway" door.wav "reverb:space=hall,mix=0.25" --duration 2
-ffmpeg -i mix.wav -i door.wav -filter_complex "[1:a]adelay=6000:all=1[d];[0:a][d]amix=inputs=2:duration=first:normalize=0" mix-door.wav
+sfx apply mix.wav mix-door.wav "layer:file=door.wav,at=6,align=onset,level=-3"
 ```
 
-`adelay` is in milliseconds. To sync the effect's own attack to the cut, check its onset with `sfx analyze` or listen in the studio; generated effects usually start within the first 50 ms. For a synthesized hit, riser or whoosh, the cinema effects in the sound-design skill are faster and free.
+`align=onset` measures where the generated sound's attack is and lands that on the cut, so leading silence in the generation does not make it late. Generated sound effects also show up in the studio's *Samples* tab, where the user can try them on a moment by ear. For a synthesized hit, riser or whoosh, the cinema effects in the sound-design skill are faster and free; for recorded samples from a sound library, see "Real samples as layers" there.
 
 ### An ambience bed
 

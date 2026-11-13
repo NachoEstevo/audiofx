@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type Step = EffectStep & { key: string; windowed: boolean; bypassed: boolean };
+export type SampleOption = { id: string; name: string; folder: string };
 
 export function StepCard(props: {
   step: Step;
@@ -14,6 +15,8 @@ export function StepCard(props: {
   duration: number;
   /** Moment marked on the waveform, to anchor time params. */
   moment: number;
+  /** Library samples a file param can pick from. */
+  samples: SampleOption[];
   onParam: (id: string, value: ParamValue) => void;
   onUpdate: (patch: Partial<Step>) => void;
   onMove: (delta: number) => void;
@@ -72,6 +75,7 @@ export function StepCard(props: {
               spec={spec}
               value={step.params?.[spec.id] ?? spec.default}
               moment={props.moment}
+              samples={props.samples}
               onChange={(v) => props.onParam(spec.id, v)}
             />
           ))}
@@ -161,7 +165,45 @@ function Slider(props: { value: number; min: number; max: number; step: number; 
   );
 }
 
-function ParamControl({ spec, value, moment, onChange }: { spec: ParamSpec; value: ParamValue; moment: number; onChange: (v: ParamValue) => void }) {
+/** A native select dressed as a pill: the system picker is the right control on a phone. */
+export function SamplePicker(props: { value: string; samples: SampleOption[]; label: string; empty?: string; onChange: (id: string) => void }) {
+  const known = !props.value || props.samples.some((s) => s.id === props.value);
+  return (
+    <span className="relative inline-flex h-9 max-w-full min-w-0 flex-1 items-center rounded-full bg-muted text-[13px] transition-colors hover:bg-muted-strong">
+      <select
+        aria-label={props.label}
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        className="h-full w-full min-w-0 cursor-pointer appearance-none truncate rounded-full bg-transparent pr-8 pl-3.5 outline-none focus-visible:shadow-[0_0_0_2px_var(--color-foreground)]"
+      >
+        {props.empty !== undefined && <option value="">{props.empty}</option>}
+        {!known && <option value={props.value}>Missing sample</option>}
+        {props.samples.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name} · {s.folder}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 size-3.5" strokeWidth={1.5} />
+    </span>
+  );
+}
+
+function ParamControl({ spec, value, moment, samples, onChange }: { spec: ParamSpec; value: ParamValue; moment: number; samples: SampleOption[]; onChange: (v: ParamValue) => void }) {
+  if (spec.type === "file") {
+    return (
+      <div className="min-w-0 sm:col-span-2" title={spec.description}>
+        <span className="mb-1.5 block text-[13px] text-muted-foreground">{spec.label}</span>
+        <SamplePicker
+          label={spec.label}
+          value={String(value).replace(/^library:/, "")}
+          samples={samples}
+          empty={String(value) ? undefined : "Pick a sample"}
+          onChange={(id) => onChange(id ? `library:${id}` : "")}
+        />
+      </div>
+    );
+  }
   // Params that are an instant in the audio (at, start): a number field and a button to take the marked moment.
   if (spec.type === "number" && spec.unit === "s" && spec.max >= 60) {
     return (
@@ -169,9 +211,11 @@ function ParamControl({ spec, value, moment, onChange }: { spec: ParamSpec; valu
         <span className="mb-1 block text-[13px] text-muted-foreground">{spec.label}</span>
         <span className="flex items-center gap-2">
           <NumberField value={Number(value)} min={spec.min} max={spec.max} label={spec.label} onChange={onChange} />
-          <Button size="sm" variant="ghost" onClick={() => onChange(Math.round(moment * 100) / 100)}>
-            <Crosshair strokeWidth={1.5} /> Use the moment
-          </Button>
+          {spec.moment !== false && (
+            <Button size="sm" variant="ghost" onClick={() => onChange(Math.round(moment * 100) / 100)}>
+              <Crosshair strokeWidth={1.5} /> Use the moment
+            </Button>
+          )}
         </span>
       </div>
     );

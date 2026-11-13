@@ -35,6 +35,8 @@ export interface NumberParam {
   unit?: string;
   /** Suggested slider scale: "log" for frequencies. */
   scale?: "linear" | "log";
+  /** false for a time that is not an instant on the timeline (a length, an offset inside a sample): the studio then offers no "Use the moment". */
+  moment?: boolean;
   description?: string;
 }
 
@@ -55,7 +57,19 @@ export interface BoolParam {
   description?: string;
 }
 
-export type ParamSpec = NumberParam | EnumParam | BoolParam;
+/**
+ * An audio file on disk (a sample to layer). The value is a path, or a `library:<id>` reference that the
+ * CLI and the studio server resolve before compiling: the browser never sees paths.
+ */
+export interface FileParam {
+  type: "file";
+  id: string;
+  label: string;
+  default: string;
+  description?: string;
+}
+
+export type ParamSpec = NumberParam | EnumParam | BoolParam | FileParam;
 export type ParamValue = number | string | boolean;
 export type Params = Record<string, ParamValue>;
 

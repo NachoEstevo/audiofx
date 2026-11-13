@@ -15,9 +15,19 @@ Effects live in `src/core/effects/*.ts`. Each one declares its params (ranges, d
 
 `src/core/effects/cinema.ts` synthesizes hits, risers, whooshes, sub drops and braams inside the filtergraph (`aevalsrc`, `anoisesrc`, sweeps with `asendcmd`) and mixes them in at `at` with `adelay` + `amix`. Chirps integrate the phase so they don't click. Levels were calibrated by measuring RMS and peak per window over a real voice and song.
 
+## Sample layers
+
+`layer` reads a file inside the filtergraph with `amovie`, so a chain with samples still has one input and one output and works with `ffmpeg -af`. The path is escaped twice (`filterPath` in `graph.ts`): once for the graph parser and once for the filter's own option parser.
+
+Compiling stays pure, because the studio also compiles in the browser to validate a chain. Everything that needs the disk happens in `prepareSteps` (`src/core/prepare.ts`), which the CLI and the studio server run before compiling: it turns `library:<id>` references into paths, checks that files exist and, for `align=onset` or `align=peak`, measures the sample's sync point (the first 5 ms block above 25% of the loudest one, or the loudest block) and writes it into `sync`.
+
+The studio server accepts only `library:<id>` references in a render request, never paths, and the *ffmpeg -af* and *Python* export tabs point to `sfx graph` for chains with a library sample, since the browser has no path to print.
+
+Samples are kept in `~/.audiofx/samples` with a `.json` next to each file (id, title, source, measured duration and sync points). `sfx sample add` downloads from a URL without storing it: signed links from a sound library expire and are not the user's to publish.
+
 ## No licensed material
 
-Reverb impulse responses are generated from exponentially decaying noise, and device speakers are short convolution kernels built in code. Noises and IRs use a seed (`--seed`), so the same chain renders byte-identical output.
+The repo ships no audio. Reverb impulse responses are generated from exponentially decaying noise, and device speakers are short convolution kernels built in code. Noises and IRs use a seed (`--seed`), so the same chain renders byte-identical output.
 
 ## Gain staging
 

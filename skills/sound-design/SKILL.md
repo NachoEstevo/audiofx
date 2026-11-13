@@ -1,6 +1,6 @@
 ---
 name: sound-design
-description: Sound design for videos with the local AudioFX CLI (`sfx`). 61 effects as ffmpeg filtergraphs, including synthesized cinema moments anchored to a second (impact hit, riser, whoosh, sub drop, trailer braam, gap before the drop, cut with a reverb tail, reverb or echo throw, stutter, trailer voice, archival voice) and treatments (AM radio, landline, cellphone, device speakers, walkie-talkie, old TV, vinyl, cassette, underwater, behind the wall, reverb from bathroom to cathedral, echo, far away, robot, monster, ghost, dream, flashback, post-explosion shell shock, slow motion, tape stop, filter sweeps, reverse swell, low/high pass, clean voice, LUFS normalization). Use it whenever you build, edit or mix the audio of a video (ffmpeg, Python with numpy, Remotion, launch cuts, reels, explainers), when a scene asks for something to sound "as if...", when a voice, song or effect needs treatment, when preparing a drop, a hit on a cut, a title or a sound transition, or when normalizing loudness for export, even if the request never mentions audio effects. Also for ElevenLabs voices, music or sound effects that need processing (see the elevenlabs-fx skill to generate them). También para pedidos en español: bajo el agua, radio, teléfono, golpe, riser, whoosh, braam, LUFS.
+description: Sound design for videos with the local AudioFX CLI (`sfx`). 62 effects as ffmpeg filtergraphs, including synthesized cinema moments anchored to a second (impact hit, riser, whoosh, sub drop, trailer braam, gap before the drop, cut with a reverb tail, reverb or echo throw, stutter, trailer voice, archival voice), recorded samples layered at an exact second (from the user's sound library such as Epidemic Sound, from ElevenLabs or from local files) and treatments (AM radio, landline, cellphone, device speakers, walkie-talkie, old TV, vinyl, cassette, underwater, behind the wall, reverb from bathroom to cathedral, echo, far away, robot, monster, ghost, dream, flashback, post-explosion shell shock, slow motion, tape stop, filter sweeps, reverse swell, low/high pass, clean voice, LUFS normalization). Use it whenever you build, edit or mix the audio of a video (ffmpeg, Python with numpy, Remotion, launch cuts, reels, explainers), when a scene asks for something to sound "as if...", when a voice, song or effect needs treatment, when preparing a drop, a hit on a cut, a title or a sound transition, or when normalizing loudness for export, even if the request never mentions audio effects. Also for ElevenLabs voices, music or sound effects that need processing (see the elevenlabs-fx skill to generate them). También para pedidos en español: bajo el agua, radio, teléfono, golpe, riser, whoosh, braam, sample, efecto de sonido grabado, LUFS.
 ---
 
 # Sound design with AudioFX
@@ -24,6 +24,7 @@ If `sfx` is not a command on this machine, use the full path. It works from any 
 | Process an audio or video file | `sfx apply <input> <output> <step...>` |
 | The filtergraph for your own ffmpeg | `sfx graph <step...>` |
 | Measure loudness and peaks | `sfx analyze <file>` |
+| Keep a recorded sample and layer it | `sfx sample add <file\|url> --title "..."`, `sfx sample list`, then the `layer` effect |
 | A new voice, sound or song, already processed | `sfx generate <sfx\|voice\|music> "<prompt>" <output> [step...]` (ElevenLabs; see the elevenlabs-fx skill) |
 | Let the user listen and tweak | `sfx studio` (opens http://127.0.0.1:5177) |
 
@@ -66,13 +67,52 @@ Launch videos don't sound "cinematic" because of a filter on the voice, but beca
 - Adjust the level with `level` (dB) before touching `gain`: `hit` and `sub-drop` already come in loud.
 - Few and precise: one or two moments per 15 s. A hit on every cut gets tiring.
 - `trailer-voice` (deep, epic voice with a room) and `archival` (archival interview) are voice treatments, with no `at`.
-- Need a real recorded-sounding effect (a door, glass, rain) rather than a synthesized one? Generate it with ElevenLabs and layer it at `T` (elevenlabs-fx skill).
+- Need a real recorded sound (an impact with weight, a door, glass, rain) rather than a synthesized one? Layer a sample at `T`: see the next section.
+
+## Real samples as layers
+
+Synthesized hits are fast and free, but a recorded impact, whoosh or foley sound usually reads as more real. The `layer` effect mixes any audio file into the signal at an exact second, inside the same filtergraph:
+
+```bash
+sfx apply mix.wav mix-door.wav "layer:file=door.wav,at=6,align=onset,level=-3"
+sfx apply mix.wav mix-hit.wav "riser:at=6,length=2.5" "drop-gap:at=5.55,gap=0.45" "layer:file=library:ab12cd34ef56,at=6,align=onset" "sub-drop:at=6,level=-4"
+```
+
+- `align=onset` measures where the sample's attack is and puts **that** on `at`. Samples often start with 20–300 ms of silence or pre-roll; with the default `align=start` that silence makes the hit land late. Use `align=peak` for whooshes and swells, whose loudest point is what lands on the cut.
+- `level` in dB, `length` to use only the first seconds, `fadeIn` / `fadeOut` to shape it. `sync=<s>` sets the sync point by hand (with `align=start`).
+- A sample replaces the synthesized `hit`, `braam` or `whoosh`; keep the `riser`, `drop-gap` and `sub-drop` around it.
+- To treat the sample itself (reverb, distance, a speaker), process it first with `sfx apply sample.wav sample-fx.wav ...` and layer the result.
+- Sample levels vary a lot. After layering, run `sfx analyze` on the result and bring `level` down if the peak reaches 0 dBFS.
+
+### Where samples live
+
+Samples are licensed audio that belongs to the user's subscription. They live in `~/.audiofx/samples`, each with a `.json` (id, title, source) next to it, and **never** in a project folder or a repository:
+
+```bash
+sfx sample add <file-or-url> --title "Door slam, heavy wood" --id <library id> --source epidemic-sound
+sfx sample list            # each sample's library:<id>, duration and where its attack is
+```
+
+`sample add` copies a local file or downloads a URL, measures the attack and prints the `library:<id>` reference to use in `layer:file=...`. The studio shows the samples in its *Samples* tab, and its moments can use one instead of the synthesized impact or whoosh.
+
+### Fetching from a sound library (Epidemic Sound MCP)
+
+When the user has the Epidemic Sound MCP connected (tools `SearchSoundEffects` and `DownloadSoundEffect`):
+
+1. **Reuse first.** `sfx sample list`: if a fitting sample is already there, use it.
+2. **Search** with `SearchSoundEffects`: a short, concrete term ("cinematic impact low", "whoosh fast short", "glass shatter"), `first: 5`, and a duration filter in milliseconds that fits the use (impacts and whooshes under 4000; ambiences longer). Choose by title, tags and duration.
+3. **Download** with `DownloadSoundEffect` (`fileType: WAV`). It returns a signed URL that expires.
+4. **Keep it**: `sfx sample add "<assetUrl>" --title "<title>" --id <id> --source epidemic-sound`. Never write the signed URL into a file, and never save the audio inside the project.
+5. **Use it** with the `library:<id>` that `sample add` printed: `"layer:file=library:<id>,at=T,align=onset"`.
+
+You can't listen, so don't claim a sample "sounds right". Report what you can measure (duration, where the attack is, the peak of the result) and, when the choice matters, add two or three candidates and let the user pick by ear in the studio's *Samples* tab. If a download fails with `RETRY_LATER`, wait the seconds it says before trying again.
 
 ## Which effect to use
 
 | The scene needs… | Effect | Starting point |
 | --- | --- | --- |
 | Cut, reveal, on-screen hit | `hit` | `at=<s>,size=0.6,tone=mid` |
+| A recorded sound on a cut (impact, door, glass, whoosh) | `layer` | `file=<path or library:id>,at=<s>,align=onset` |
 | Tension rising to a cut | `riser` | `at=<s of the cut>,length=2.5` |
 | Something flying past the screen | `whoosh` | `at=<s>,direction=left-right` |
 | Low weight under a title or hit | `sub-drop` | `at=<s>,level=-4` |
