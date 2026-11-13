@@ -24,6 +24,7 @@
   "include": [
     "src",
     "../src/core/compile.ts",
-    "../src/core/registry.ts"
+    "../src/core/registry.ts",
+    "../src/core/mix.ts"
   ]
 }

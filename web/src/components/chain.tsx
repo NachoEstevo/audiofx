@@ -17,6 +17,8 @@ export function StepCard(props: {
   moment: number;
   /** Library samples a file param can pick from. */
   samples: SampleOption[];
+  /** Text of the button that takes `moment` (default "Use the moment"). */
+  momentLabel?: string;
   onParam: (id: string, value: ParamValue) => void;
   onUpdate: (patch: Partial<Step>) => void;
   onMove: (delta: number) => void;
@@ -75,6 +77,7 @@ export function StepCard(props: {
               spec={spec}
               value={step.params?.[spec.id] ?? spec.default}
               moment={props.moment}
+              momentLabel={props.momentLabel}
               samples={props.samples}
               onChange={(v) => props.onParam(spec.id, v)}
             />
@@ -84,7 +87,7 @@ export function StepCard(props: {
 
       <footer className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3 text-[13px]">
         {effect.timed ? (
-          <span className="text-muted-foreground">Happens at a moment: set it above or tap “Use the moment”.</span>
+          <span className="text-muted-foreground">Happens at a moment: set it above or tap “{props.momentLabel ?? "Use the moment"}”.</span>
         ) : effect.changesDuration ? (
           <span className="text-muted-foreground">Changes the duration: applies to the whole audio.</span>
         ) : (
@@ -190,7 +193,21 @@ export function SamplePicker(props: { value: string; samples: SampleOption[]; la
 }
 
 /** One param's control, by its spec: slider (log for frequencies), time field with "Use the moment", choices, switch or sample. */
-export function ParamControl({ spec, value, moment, samples, onChange }: { spec: ParamSpec; value: ParamValue; moment: number; samples: SampleOption[]; onChange: (v: ParamValue) => void }) {
+export function ParamControl({
+  spec,
+  value,
+  moment,
+  momentLabel = "Use the moment",
+  samples,
+  onChange,
+}: {
+  spec: ParamSpec;
+  value: ParamValue;
+  moment: number;
+  momentLabel?: string;
+  samples: SampleOption[];
+  onChange: (v: ParamValue) => void;
+}) {
   if (spec.type === "file") {
     return (
       <div className="min-w-0 sm:col-span-2" title={spec.description}>
@@ -214,7 +231,7 @@ export function ParamControl({ spec, value, moment, samples, onChange }: { spec:
           <NumberField value={Number(value)} min={spec.min} max={spec.max} label={spec.label} onChange={onChange} />
           {spec.moment !== false && (
             <Button size="sm" variant="ghost" onClick={() => onChange(Math.round(moment * 100) / 100)}>
-              <Crosshair strokeWidth={1.5} /> Use the moment
+              <Crosshair strokeWidth={1.5} /> {momentLabel}
             </Button>
           )}
         </span>

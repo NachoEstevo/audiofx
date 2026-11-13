@@ -1,5 +1,5 @@
 import { AudioLines, ChevronDown, CloudRain, Drum, FolderOpen, Mic, Music, RefreshCw, Search, Sparkles, Upload, Wand2, Zap, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GeneratePanel, type GenerateRequest } from "@/components/generate-panel";
 import { cn } from "@/lib/utils";
 
@@ -39,9 +39,16 @@ export function SourcePicker(props: {
   onPick: (ref: SourceRef) => void;
   onUpload: () => void;
   onRefresh: () => void;
+  /** Lists this kind first and generates it by default (a Mix track adding its own material). */
+  kind?: LibraryItem["kind"];
+  /** Replaces the pill that shows the current source. */
+  trigger?: (state: { open: boolean; toggle: () => void }) => ReactNode;
+  /** Classes of the root, e.g. `static` to anchor the panel to a positioned ancestor. */
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"library" | "generate">("library");
+  const kinds = props.kind ? [...KINDS].sort((a, b) => Number(b.kind === props.kind) - Number(a.kind === props.kind)) : KINDS;
   const [query, setQuery] = useState("");
   const root = useRef<HTMLDivElement>(null);
 
@@ -67,20 +74,24 @@ export function SourcePicker(props: {
 
   return (
     // min-w-0: as a flex item it would otherwise grow to the full file name and overflow the card.
-    <div ref={root} className="relative min-w-0 max-w-full">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        title={props.current?.name}
-        className="inline-flex h-9 max-w-full cursor-pointer items-center gap-2 rounded-full bg-muted pr-3 pl-1.5 text-[13px] transition-colors hover:bg-muted-strong"
-      >
-        <span className="grid size-6 place-items-center rounded-full bg-card shadow-ring">
-          {props.loading ? <RefreshCw className="size-3.5 animate-spin" strokeWidth={1.5} /> : <AudioLines className="size-3.5" strokeWidth={1.5} />}
-        </span>
-        <span className="truncate">{props.loading ?? props.current?.name ?? "Pick an audio"}</span>
-        {props.current && !props.loading && <span className="shrink-0 font-mono text-[11px] whitespace-nowrap text-muted-foreground">{props.current.duration.toFixed(1)} s</span>}
-        <ChevronDown className={cn("size-3.5 shrink-0 transition-transform duration-200", open && "rotate-180")} strokeWidth={1.5} />
-      </button>
+    <div ref={root} className={cn("relative min-w-0 max-w-full", props.className)}>
+      {props.trigger ? (
+        props.trigger({ open, toggle: () => setOpen((o) => !o) })
+      ) : (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          title={props.current?.name}
+          className="inline-flex h-9 max-w-full cursor-pointer items-center gap-2 rounded-full bg-muted pr-3 pl-1.5 text-[13px] transition-colors hover:bg-muted-strong"
+        >
+          <span className="grid size-6 place-items-center rounded-full bg-card shadow-ring">
+            {props.loading ? <RefreshCw className="size-3.5 animate-spin" strokeWidth={1.5} /> : <AudioLines className="size-3.5" strokeWidth={1.5} />}
+          </span>
+          <span className="truncate">{props.loading ?? props.current?.name ?? "Pick an audio"}</span>
+          {props.current && !props.loading && <span className="shrink-0 font-mono text-[11px] whitespace-nowrap text-muted-foreground">{props.current.duration.toFixed(1)} s</span>}
+          <ChevronDown className={cn("size-3.5 shrink-0 transition-transform duration-200", open && "rotate-180")} strokeWidth={1.5} />
+        </button>
+      )}
 
       <div
         className={cn(
@@ -113,7 +124,12 @@ export function SourcePicker(props: {
         </div>
 
         {tab === "generate" ? (
-          <GeneratePanel open={open} busy={!!props.loading} onGenerate={(request) => pick({ type: "generate", request })} />
+          <GeneratePanel
+            open={open}
+            busy={!!props.loading}
+            initialKind={props.kind === "voice" || props.kind === "music" ? props.kind : undefined}
+            onGenerate={(request) => pick({ type: "generate", request })}
+          />
         ) : (
           <>
             <label className="relative block p-1 pt-2">
@@ -136,7 +152,7 @@ export function SourcePicker(props: {
                   ))}
                 </section>
               )}
-              {KINDS.map(({ kind, label, icon: Icon }) => {
+              {kinds.map(({ kind, label, icon: Icon }) => {
                 const group = items.filter((i) => i.kind === kind && !i.generated);
                 if (!group.length) return null;
                 return (
