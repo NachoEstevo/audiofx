@@ -32,6 +32,8 @@ pnpm studio
 
 The studio opens at `http://127.0.0.1:5177`. Pick an audio, tap a sound to hear it on your audio, hold `A` to compare with the original, and add the ones you like to your chain to tweak and export them.
 
+The studio has three screens. **Sounds** is the one above. **Mix** loads a video, marks its cuts, lays voice, music and effects on a timeline with the music ducked under the voice, and exports the mix or the video with the new audio. **Review** walks every effect over your audio so you can mark each one keep, tweak or cut; verdicts are saved in `~/.audiofx/review.json`.
+
 `node bin/sfx.mjs doctor` checks ffmpeg and the filters the catalog needs.
 
 ## CLI

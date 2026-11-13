@@ -50,6 +50,8 @@ ffmpeg 7.1's `vibrato` filter outputs NaN or garbage in its first milliseconds a
 ## Studio
 
 - `src/server.ts` serves the built web app, normalizes sources to 48 kHz WAV, renders chains with the same compiler, and calls ElevenLabs. The browser only ever gets ids for library files, never paths.
+- **Screens**: a hash router (`web/src/router.ts`) and a shell with one entry per screen in `ROUTES`. Sounds tries effects on an audio, Mix is the timeline against the picture, Review walks the catalog and keeps a verdict per effect in `~/.audiofx/review.json`. Screens stay mounted, so switching keeps their state.
+- **Mix screen**: `src/mix-server.ts` keeps an uploaded video for the session, serves it with HTTP Range (browsers will not seek without it), transcodes an H.264 preview copy when the codec is not one browsers play, and exports from the original with `-c:v copy`. The client sends a project of source ids and `library:<id>` refs; the server maps them to files and rejects anything else. The `<video>` element is muted and follows the audio player's clock, corrected for the output latency the browser reports.
 - `src/library.ts` walks the configured folders up to 5 levels deep without following links or junctions.
 - **Orbs**: browsers allow about 16 WebGL contexts per page, so one hidden context renders every tile's orb and copies the frame into a 2D canvas. Idle orbs are painted once; only hovered, playing or rendering ones animate.
 
