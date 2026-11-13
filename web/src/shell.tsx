@@ -1,5 +1,5 @@
 import { Upload } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -158,25 +158,7 @@ export function Shell({ routes }: { routes: Route[] }) {
           <span className="font-display text-[17px] tracking-[-0.02em] whitespace-nowrap max-sm:sr-only">
             AudioFX <span className="text-muted-foreground">Studio</span>
           </span>
-          <nav aria-label="Screens" className="no-scrollbar flex min-w-0 overflow-x-auto rounded-full bg-muted p-1">
-            {routes.map((route) => {
-              const on = route === current;
-              return (
-                <a
-                  key={route.path}
-                  href={hrefOf(route.path)}
-                  aria-current={on ? "page" : undefined}
-                  className={cn(
-                    "relative z-10 inline-flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] whitespace-nowrap outline-none transition-colors duration-200 focus-visible:shadow-[0_0_0_2px_var(--color-foreground)] sm:px-3.5",
-                    on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {on && <span className="absolute inset-0 -z-10 rounded-full bg-card shadow-ring" style={{ viewTransitionName: "nav-pill" }} />}
-                  {route.label}
-                </a>
-              );
-            })}
-          </nav>
+          <NavPills routes={routes} current={current} />
           <div ref={setHeader} className="ml-auto hidden min-w-0 items-center overflow-hidden lg:flex" />
           {onFile && (
             <Button variant="primary" className="max-lg:ml-auto max-sm:w-9 max-sm:px-0" onClick={() => fileInput.current?.click()} aria-label="Upload audio or video">
@@ -219,5 +201,57 @@ export function Shell({ routes }: { routes: Route[] }) {
         )}
       </div>
     </ShellContext.Provider>
+  );
+}
+
+/** Screen links as pills. One indicator slides and resizes to the current link, and the labels cross-fade their colour with it. */
+function NavPills({ routes, current }: { routes: Route[]; current: Route }) {
+  const links = useRef(new Map<string, HTMLAnchorElement>());
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
+  // Measured, not animated, on the first paint: the pill should not fly in from the corner.
+  const [moving, setMoving] = useState(false);
+  useLayoutEffect(() => {
+    const place = () => {
+      const el = links.current.get(current.path);
+      if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
+    };
+    place();
+    const frame = requestAnimationFrame(() => setMoving(true));
+    window.addEventListener("resize", place);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+    };
+  }, [current.path]);
+  return (
+    <nav aria-label="Screens" className="no-scrollbar relative flex min-w-0 overflow-x-auto rounded-full bg-muted p-1">
+      {pill && (
+        <span
+          aria-hidden
+          className={cn("absolute top-1 bottom-1 left-0 rounded-full bg-card shadow-ring motion-reduce:transition-none", moving && "transition-[translate,width] duration-[380ms] ease-[var(--ease-out)]")}
+          style={{ translate: `${pill.left}px 0`, width: pill.width }}
+        />
+      )}
+      {routes.map((route) => {
+        const on = route === current;
+        return (
+          <a
+            key={route.path}
+            ref={(el) => {
+              if (el) links.current.set(route.path, el);
+              else links.current.delete(route.path);
+            }}
+            href={hrefOf(route.path)}
+            aria-current={on ? "page" : undefined}
+            className={cn(
+              "relative z-10 inline-flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] whitespace-nowrap outline-none transition-colors duration-[380ms] ease-[var(--ease-out)] focus-visible:shadow-[0_0_0_2px_var(--color-foreground)] sm:px-3.5",
+              on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {route.label}
+          </a>
+        );
+      })}
+    </nav>
   );
 }

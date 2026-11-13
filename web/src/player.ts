@@ -38,6 +38,11 @@ function samplePeak(buffer: AudioBuffer): { db: number; clipped: number } {
   return { db: peak > 0 ? 20 * Math.log10(peak) : -120, clipped };
 }
 
+/** Seconds to ease from one render into the next while playing. */
+const SWAP_FADE = 0.25;
+/** Seconds to cross between original and processed: short, so the comparison stays immediate but does not click. */
+const TOGGLE_FADE = 0.03;
+
 /**
  * A/B player: switches between original and processed while keeping the position.
  * With `matchLoudness` the processed track plays at the original's level, like the plugins'
@@ -51,6 +56,8 @@ export class Player {
   private levels: Partial<Record<Track, number>> = {};
   private peaks: Partial<Record<Track, { db: number; clipped: number }>> = {};
   private node?: AudioBufferSourceNode;
+  /** Fade gain of the playing source: each source has its own, so two can cross over. */
+  private fader?: GainNode;
   private startedAt = 0;
   private offset = 0;
   track: Track = "processed";
@@ -183,28 +190,52 @@ export class Player {
     this.gain.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.015);
   }
 
-  private stop() {
-    if (this.node) {
-      this.node.onended = null;
-      this.node.stop();
-      this.node.disconnect();
-      this.node = undefined;
+  /** Stops what is playing; with `fade` seconds it fades out first, so a new source can cross over it. */
+  private stop(fade = 0) {
+    const node = this.node;
+    const out = this.fader;
+    if (!node || !out) return;
+    this.node = undefined;
+    this.fader = undefined;
+    node.onended = null;
+    if (fade > 0) {
+      const now = this.ctx.currentTime;
+      out.gain.cancelScheduledValues(now);
+      out.gain.setValueAtTime(out.gain.value, now);
+      out.gain.linearRampToValueAtTime(0, now + fade);
+      node.stop(now + fade);
+      node.onended = () => {
+        node.disconnect();
+        out.disconnect();
+      };
+    } else {
+      node.stop();
+      node.disconnect();
+      out.disconnect();
     }
   }
 
+  /** A new render or loop setting while playing: eases from what was sounding into the new one. */
   private restart() {
     const at = this.time;
-    this.stop();
-    this.startAt(at);
+    this.stop(SWAP_FADE);
+    this.startAt(at, SWAP_FADE);
   }
 
-  private startAt(at: number) {
+  private startAt(at: number, fade = 0) {
     const buffer = this.buffer();
     if (!buffer) return;
     const node = this.ctx.createBufferSource();
     node.buffer = buffer;
     node.loop = this.loop;
-    node.connect(this.gain);
+    const fader = this.ctx.createGain();
+    if (fade > 0) {
+      fader.gain.setValueAtTime(0, this.ctx.currentTime);
+      fader.gain.linearRampToValueAtTime(1, this.ctx.currentTime + fade);
+    }
+    node.connect(fader);
+    fader.connect(this.gain);
+    this.fader = fader;
     const offset = Math.min(at, Math.max(0, buffer.duration - 0.01));
     node.start(0, offset);
     node.onended = () => {
@@ -255,8 +286,8 @@ export class Player {
     this.offset = at;
     this.applyGain();
     if (this.playing) {
-      this.stop();
-      this.startAt(at);
+      this.stop(TOGGLE_FADE);
+      this.startAt(at, TOGGLE_FADE);
     }
     this.changed();
   }

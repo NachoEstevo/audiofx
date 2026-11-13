@@ -98,7 +98,7 @@ export function SoundGrid(props: {
       </div>
 
       {group === "effects" && !q && (
-        <div className="no-scrollbar -mx-4 mt-3 flex gap-1.5 overflow-x-auto px-4">
+        <div className="no-scrollbar -mx-4 mt-2 flex gap-1.5 overflow-x-auto px-4 py-1">
           {(["all", ...CATEGORIES] as const).map((c) => (
             <button
               key={c}

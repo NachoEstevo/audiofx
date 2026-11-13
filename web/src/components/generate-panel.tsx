@@ -153,7 +153,7 @@ export function GeneratePanel(props: { open: boolean; busy: boolean; initialKind
         }}
         aria-label="Prompt"
       />
-      <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+      <div className="no-scrollbar -mx-1 -my-1 flex gap-1.5 overflow-x-auto px-1 py-1">
         {spec.examples.map((ex) => (
           <button key={ex} onClick={() => setPrompt(ex)} className="h-7 shrink-0 cursor-pointer rounded-full bg-card px-2.5 text-xs whitespace-nowrap shadow-ring hover:bg-muted">
             {ex}

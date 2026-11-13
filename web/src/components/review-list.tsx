@@ -186,7 +186,7 @@ export function ReviewPicker(props: ListProps & { onMove: (delta: number) => voi
   return (
     <div className={cn("space-y-3", props.className)}>
       <Progress reviewed={props.reviewed} />
-      <Filters filter={props.filter} counts={props.counts} onFilter={props.onFilter} className="no-scrollbar -mx-4 overflow-x-auto px-4" />
+      <Filters filter={props.filter} counts={props.counts} onFilter={props.onFilter} className="no-scrollbar -mx-4 -my-1 overflow-x-auto px-4 py-1" />
       <div className="flex items-center gap-2">
         <Button size="icon" onClick={() => props.onMove(-1)} aria-label="Previous effect">
           <ChevronLeft strokeWidth={1.5} />
