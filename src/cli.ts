@@ -10,22 +10,26 @@ import {
   compile,
   detectCuts,
   getEffect,
+  measureSections,
   parseStep,
   prepareSteps,
+  probeMedia,
   renderMix,
   resolveFfmpeg,
   runFfmpeg,
   type Category,
   type EffectInfo,
   type EffectStep,
+  type LevelChange,
   type MixClip,
   type MixProject,
   type MixTrack,
   type TrackRole,
+  type TrackSections,
 } from "./core/index.js";
 import { catalogMarkdown } from "./catalog-markdown.js";
 import { findApiKey, generate, SETUP_HINT, type GenerateKind } from "./elevenlabs.js";
-import type { LibraryKind } from "./library.js";
+import { STEMS, isStem, type LibraryKind } from "./library.js";
 import { addSample, libraryResolver, listSamples } from "./samples.js";
 
 const HELP = `sfx — sound design effects for video (ffmpeg filtergraphs)
@@ -37,14 +41,16 @@ Usage:
   sfx apply <input> <output> <step...>          Processes a file (audio or video)
   sfx generate <sfx|voice|music> "<prompt>" <output> [step...]
                                                 Generates with ElevenLabs, then applies the steps
-  sfx sample add <file|url> [--title --id --source --kind]
+  sfx sample add <file|url> [--title --id --source --kind --stem]
                                                 Keeps a recorded sample in ~/.audiofx/samples to layer it
   sfx sample list [--json]                      Your samples and the library:<id> to use them
   sfx mix <project.json> <output>               Mixes voice, music and effect tracks on a timeline
   sfx mix <output> --voice v.wav --music m.wav [--sfx door.wav@6] [--video clip.mp4]
                                                 The same without a project file (--print shows its JSON)
-  sfx cuts <video> [--threshold 10] [--json]    Hard cuts in a video: where to land hits and whooshes
+  sfx cuts <video> [--threshold 10] [--json]    The video's duration and its hard cuts: where to land hits and whooshes
+  sfx sections <file> [--top 5] [--json]        Where a track rises (drop candidates) and falls, and its sections
   sfx analyze <file> [--json]                   Loudness (LUFS), true peak, peak, RMS, duration
+  (sections and analyze also take a library:<id> from \`sfx sample list\`)
   sfx studio [--port 5177] [--no-open]          Opens the web studio to listen and tweak
   sfx catalog                                   Catalog as Markdown (for the skill)
   sfx doctor                                    Checks ffmpeg, the filters it needs and the ElevenLabs key
@@ -68,7 +74,9 @@ sample add options (samples are licensed audio: they stay in ~/.audiofx/samples,
   --title <text>           Name shown in the studio and in \`sample list\`
   --id <id>                Id in the library it came from (kept in the .json next to the file)
   --source <name>          epidemic-sound, elevenlabs, local (default) or any other name
-  --kind <sfx|music|voice> Default sfx
+  --kind <sfx|music|voice> Default sfx (music with --stem)
+  --stem <part>            ${STEMS.join(", ")}: a part of the recording --id names.
+                           Each id + stem is kept once: adding the pair again replaces the file
 
 mix options (file@s places a clip at s seconds; library:<id> works wherever a file does):
   --voice <file[@s]>       A voice clip (repeatable). The music ducks under the voices
@@ -117,6 +125,8 @@ const OPTIONS = {
   loudness: { type: "string" },
   print: { type: "boolean" },
   threshold: { type: "string" },
+  top: { type: "string" },
+  stem: { type: "string" },
   model: { type: "string" },
   instrumental: { type: "boolean" },
   title: { type: "string" },
@@ -181,6 +191,39 @@ async function report(output: string, started: number, extra: Record<string, unk
   if (values.json) return console.log(JSON.stringify(result, null, 2));
   console.log(`✔ ${output}  (${analysis.duration.toFixed(2)} s, ${analysis.integratedLufs ?? "?"} LUFS, peak ${analysis.peakDb?.toFixed(1) ?? "?"} dBFS, ${result.ms} ms)`);
   if ((analysis.peakDb ?? -99) > -0.1) console.log("⚠ The output reaches 0 dBFS: add `limiter` or `loudness` at the end of the chain.");
+}
+
+/** A file to measure: a path, or a `library:<id>` from `sfx sample list`. */
+function measuredFile(arg: string): string {
+  if (!arg.startsWith(LIBRARY_REF)) return arg;
+  const file = libraryResolver()(arg.slice(LIBRARY_REF.length));
+  if (!file) throw new Error(`"${arg}" is not in the library. Run \`sfx sample list\`.`);
+  return file;
+}
+
+const signed = (db: number) => `${db > 0 ? "+" : ""}${db.toFixed(1)}`;
+
+function printSections(s: TrackSections) {
+  console.log(`Duration ${s.duration.toFixed(2)} s · ${s.integrated ?? "?"} LUFS integrated`);
+  const change = (c: LevelChange, i: number) =>
+    console.log(
+      `  ${i + 1}. ${c.sharp ? " " : "~"}${c.time.toFixed(3).padStart(8)} s  ${signed(c.jump).padStart(6)} dB  low band ${signed(c.lowJump).padStart(6)} dB  (${c.before.toFixed(1)} → ${c.after.toFixed(1)} LUFS)`,
+    );
+  console.log(`\nRises (drop candidates), strongest first: the next ${s.window} s against the previous ${s.window} s`);
+  if (s.rises.length) s.rises.forEach(change);
+  else console.log("  None: the level never clearly rises (3 dB overall, or 6 dB below 150 Hz).");
+  console.log("\nFalls (breakdowns, endings)");
+  if (s.falls.length) s.falls.forEach(change);
+  else console.log("  None.");
+  if (s.rises.some((c) => !c.sharp) || s.falls.some((c) => !c.sharp)) console.log("  ~ a gradual change with no sharp attack or cut-off nearby: its time is approximate.");
+  console.log("\nSections");
+  for (const sec of s.sections) {
+    console.log(`  ${`${sec.start.toFixed(2)}–${sec.end.toFixed(2)} s`.padEnd(17)} ${sec.level.toFixed(1).padStart(6)} LUFS  low band ${sec.low.toFixed(1).padStart(6)} dB`);
+  }
+  if (s.quietest && s.loudest) {
+    const span = (sec: NonNullable<TrackSections["quietest"]>) => `${sec.start.toFixed(2)}–${sec.end.toFixed(2)} s (${sec.level.toFixed(1)} LUFS)`;
+    console.log(`Quietest ${span(s.quietest)} · loudest ${span(s.loudest)}`);
+  }
 }
 
 /** "door.wav@6" → a clip at 6 s. Paths become absolute so a printed project works from any folder. */
@@ -294,18 +337,23 @@ async function main() {
         if (!samples.length) return console.log("No samples yet. Add one with `sfx sample add <file|url> --title \"...\"`.");
         for (const s of samples) {
           const timing = s.duration !== undefined ? `${s.duration.toFixed(2)} s, attack at ${(s.onset ?? 0).toFixed(3)} s` : "not measured";
-          console.log(`${s.ref}  ${s.title}  (${s.source ?? "local"} · ${s.kind} · ${timing})
+          console.log(`${s.ref}  ${s.name}  (${s.source ?? "local"} · ${s.kind} · ${timing})
     ${s.file}`);
         }
         return;
       }
-      if (action !== "add" || !from) throw new Error('Usage: sfx sample add <file|url> [--title "..."] [--id <id>] [--source <name>] [--kind sfx|music|voice]  ·  sfx sample list');
+      if (action !== "add" || !from) {
+        throw new Error('Usage: sfx sample add <file|url> [--title "..."] [--id <id>] [--source <name>] [--kind sfx|music|voice] [--stem <part>]  ·  sfx sample list');
+      }
       if (values.kind && !["sfx", "music", "voice"].includes(values.kind)) throw new Error("--kind must be sfx, music or voice.");
-      const sample = await addSample({ from, title: values.title, id: values.id, source: values.source, kind: values.kind as LibraryKind | undefined });
+      const stem = values.stem?.trim().toLowerCase();
+      if (stem !== undefined && !isStem(stem)) throw new Error(`--stem must be one of ${STEMS.join(", ")}.`);
+      const sample = await addSample({ from, title: values.title, id: values.id, stem, source: values.source, kind: values.kind as LibraryKind | undefined });
       if (values.json) return console.log(JSON.stringify(sample, null, 2));
-      console.log(`✔ ${sample.title} → ${sample.file}`);
+      console.log(`✔ ${sample.name} → ${sample.file}`);
       console.log(`  ${sample.duration?.toFixed(2)} s, attack at ${sample.onset?.toFixed(3)} s, loudest at ${sample.peak?.toFixed(3)} s`);
-      console.log(`  Use it: "layer:file=${sample.ref},at=<s>,align=onset"`);
+      if (sample.kind === "music") console.log(`  Use it: \`sfx sections ${sample.ref}\` for its drops, "file": "${sample.ref}" in a mix project, or --music ${sample.ref}@<s>`);
+      else console.log(`  Use it: "layer:file=${sample.ref},at=<s>,align=onset"`);
       return;
     }
     case "mix": {
@@ -324,13 +372,22 @@ async function main() {
       if (!args[0]) throw new Error("Usage: sfx cuts <video> [--threshold 10]");
       const cuts = await detectCuts(args[0], { threshold: num(values.threshold, "threshold") });
       if (values.json) return console.log(JSON.stringify(cuts, null, 2));
+      // The video's own length (not its audio's): what music must be cut to.
+      const info = await probeMedia(args[0]);
+      console.log(`${path.basename(args[0])}: ${info.duration.toFixed(3)} s${info.fps ? ` at ${info.fps} fps` : ""}`);
       if (!cuts.length) return console.log("No hard cuts found. A lower --threshold (default 10) catches softer ones.");
       for (const cut of cuts) console.log(`${cut.time.toFixed(3)} s  (score ${cut.score.toFixed(1)})`);
       return;
     }
+    case "sections": {
+      if (!args[0]) throw new Error("Usage: sfx sections <file> [--top 5] [--json]");
+      const sections = await measureSections(measuredFile(args[0]), { top: num(values.top, "top") });
+      if (values.json) return console.log(JSON.stringify(sections, null, 2));
+      return printSections(sections);
+    }
     case "analyze": {
       if (!args[0]) throw new Error("Usage: sfx analyze <file>");
-      const a = await analyzeFile(args[0]);
+      const a = await analyzeFile(measuredFile(args[0]));
       if (values.json) return console.log(JSON.stringify(a, null, 2));
       console.log(`Duration:  ${a.duration.toFixed(2)} s`);
       console.log(`Loudness:  ${a.integratedLufs ?? "?"} LUFS integrated (LRA ${a.loudnessRange ?? "?"} LU)`);
@@ -343,7 +400,7 @@ async function main() {
       const ffmpeg = resolveFfmpeg();
       const { stdout } = await runFfmpeg(["-filters"]);
       const text = stdout.toString();
-      const needed = ["amovie", "afir", "rubberband", "asendcmd", "acrusher", "asoftclip", "afreqshift", "loudnorm", "chorus", "anoisesrc", "aevalsrc", "aeval"];
+      const needed = ["amovie", "afir", "rubberband", "asendcmd", "acrusher", "asoftclip", "afreqshift", "loudnorm", "chorus", "anoisesrc", "aevalsrc", "aeval", "afftdn", "deesser"];
       const missing = needed.filter((f) => !new RegExp(`\\s${f}\\s`).test(text));
       const version = (await runFfmpeg(["-version"])).stdout.toString().split("\n")[0];
       console.log(`ffmpeg: ${ffmpeg}\n${version}`);

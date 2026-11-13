@@ -94,9 +94,25 @@ sfx apply voice.wav monster.wav voice-clean "monster:semitones=-9" limiter
 
 ### Voice-over on music (final mix)
 
-1. Voice: `voice-clean`, and `gate` if it has background noise.
-2. Music: duck it (see below) or lower it with `gain`. Background music under a voice usually sits 12–18 dB below the voice.
-3. Mix: `loudness` at -14 LUFS and check with `sfx analyze`.
+```json
+{
+  "version": 1,
+  "video": "cut.mp4",
+  "tracks": [
+    { "id": "voice", "role": "voice", "clips": [{ "file": "vo.wav", "at": 1.5, "steps": [{ "effect": "voice-clean" }, { "effect": "gate", "params": { "threshold": -40 } }] }] },
+    { "id": "music", "role": "music", "gain": -6, "clips": [{ "file": "song.wav", "fadeIn": 0.5, "fadeOut": 2 }], "duck": { "depth": 12 } }
+  ]
+}
+```
+
+```bash
+sfx mix voice-over.json final.mp4
+sfx analyze final.mp4
+```
+
+- `voice-clean` first on the voice, `gate` only if it has background noise between phrases.
+- Music under a voice usually sits 12–18 dB below it: the track `gain` sets the bed and `duck` takes it further down while the voice speaks.
+- The master is normalized toward -14 LUFS with a -1 dB ceiling. Check it with `sfx analyze`: a mix with long quiet stretches can land several LU under; then add `"master": { "loudness": -10 }` (the target raised by the shortfall) and mix again.
 
 ## Integrations
 
@@ -145,13 +161,39 @@ The picture is copied without re-encoding.
 
 ## Ducking (lowering the music while the voice speaks)
 
-Not a catalog effect yet, because it needs two inputs. Do it directly with ffmpeg:
+`sfx mix` ducks every music track under the voice tracks, by an exact depth in dB:
 
 ```bash
-ffmpeg -i music.wav -i voice.wav -filter_complex "[1:a]apad,asplit=2[sc][v];[0:a][sc]sidechaincompress=threshold=0.01:ratio=20:attack=5:release=300[duck];[duck][v]amix=inputs=2:duration=first:normalize=0[out]" -map "[out]" mix.wav
+sfx mix mix.wav --voice voice.wav --music music.wav --duck 12
 ```
 
-- With `threshold=0.01` the music drops about 8 dB while the voice plays. With `threshold=0.003`, about 18 dB. Measured with a voice at -13 dBFS RMS; quieter voices duck less.
-- `apad` on the voice keeps the mix from ending when the voice finishes before the music.
-- `release=300` brings the music back in 0.3 s. Raise it to 600–800 for a slower return.
-- Measure the result with `sfx analyze` and normalize the mix with `sfx apply mix.wav final.wav loudness`.
+- Default 10 dB. In a project, `"duck": { "depth": 12, "attack": 20, "release": 600, "threshold": -45 }` on the music track: attack and release in ms (the music is back within 1 dB `release` ms after the voice stops), threshold in dBFS RMS of the voice.
+- `"duck": false` on a music track keeps it level; `"duck": true` on an sfx track ducks it too.
+- Without the CLI, ffmpeg's `sidechaincompress` does the same by hand, but its depth depends on the voice's level.
+
+## A drop on the cut, with stems
+
+The video is 30 s with its main cut at 12.4 s; the song's drop is at 64.0 s (confirmed by the user from `sfx sections`). The drums, bass and instruments stems of the song are in the library. Each stem plays from 64 − 12.4 = 51.6 s, so the drop lands on the cut, and only the drums go underwater from 12 to 18 s:
+
+```json
+{
+  "version": 1,
+  "video": "cut.mp4",
+  "tracks": [
+    { "id": "voice", "role": "voice", "clips": [{ "file": "vo.wav", "at": 1.5, "steps": [{ "effect": "voice-clean" }] }] },
+    { "id": "drums", "role": "music", "clips": [{ "file": "library:<drums id>", "start": 51.6, "length": 30, "fadeOut": 1.5 }],
+      "steps": [{ "effect": "underwater", "from": 12, "to": 18, "fade": 0.35 }] },
+    { "id": "bass", "role": "music", "clips": [{ "file": "library:<bass id>", "start": 51.6, "length": 30, "fadeOut": 1.5 }] },
+    { "id": "instruments", "role": "music", "clips": [{ "file": "library:<instruments id>", "start": 51.6, "length": 30, "fadeOut": 1.5 }] },
+    { "id": "hits", "role": "sfx", "clips": [{ "file": "door.wav", "at": 12.4, "align": "onset", "gain": -3 }] }
+  ]
+}
+```
+
+```bash
+sfx mix drop-stems.json final.mp4
+```
+
+- The stems' clips share `start` and `length`, so together they play the full song; the `underwater` step on the drums track changes only the drums, and only inside its window (track windows are in video seconds).
+- Every music track ducks under the voice by the same default depth, so the stems stay balanced against each other.
+- To hear one stem alone, `"solo": true` on its track.

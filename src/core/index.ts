@@ -23,3 +23,4 @@ export {
   type TrackRole,
 } from "./mix.js";
 export { prepareMix, renderMix, type MixRender, type PrepareMixOptions, type PreparedMix } from "./mix-run.js";
+export { SECTION_WINDOW, measureSections, trackSections, type LevelChange, type SectionOptions, type TrackSection, type TrackSections } from "./sections.js";

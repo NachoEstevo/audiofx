@@ -1,7 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { LIBRARY_REF, analyzeFile, measureSync } from "./core/index.js";
-import { SAMPLES_DIR, sampleMeta, scanLibrary, type LibraryKind, type SampleMeta } from "./library.js";
+import { SAMPLES_DIR, sampleMeta, sampleName, scanLibrary, type LibraryKind, type SampleMeta, type Stem } from "./library.js";
 
 /**
  * Recorded samples (from a sound library subscription, a generation, or the user's own files) live in
@@ -34,17 +34,44 @@ export interface AddSampleRequest {
   title?: string;
   /** The id in the library it came from. */
   id?: string;
+  /** Which part of the recording this is (its full mix or a stem). With `id`, the pair is kept once. */
+  stem?: Stem;
   source?: string;
+  /** Default: music for a stem, sfx otherwise. */
   kind?: LibraryKind;
 }
 
 export interface SampleInfo extends SampleMeta {
+  /** How the library shows it: the title and the stem ("Track title · drums"). */
+  name: string;
   file: string;
   /** What to pass as `layer:file=...`. */
   ref: string;
 }
 
-/** Copies or downloads a sample into ~/.audiofx/samples and writes its .json (the download URL is not kept). */
+const jsonOf = (file: string) => file.replace(/\.[^.]+$/, ".json");
+
+/** The file already kept for this library id and stem: adding them again replaces it. */
+function keptAs(id: string, stem: Stem | undefined): string | undefined {
+  let entries: string[];
+  try {
+    entries = readdirSync(SAMPLES_DIR);
+  } catch {
+    return undefined;
+  }
+  return entries
+    .filter((name) => AUDIO_EXT.has(path.extname(name).toLowerCase()))
+    .map((name) => path.join(SAMPLES_DIR, name))
+    .find((file) => {
+      const meta = sampleMeta(file);
+      return meta.id === id && (meta.stem ?? null) === (stem ?? null);
+    });
+}
+
+/**
+ * Copies or downloads a sample into ~/.audiofx/samples and writes its .json (the download URL is not kept).
+ * A library id is kept once per stem: adding the same pair again replaces the file, even under a new title.
+ */
 export async function addSample(req: AddSampleRequest): Promise<SampleInfo> {
   const remote = /^https?:\/\//i.test(req.from);
   let ext: string;
@@ -64,9 +91,12 @@ export async function addSample(req: AddSampleRequest): Promise<SampleInfo> {
   }
   const title = req.title?.trim() || (remote ? "Sample" : path.basename(req.from, path.extname(req.from)));
   mkdirSync(SAMPLES_DIR, { recursive: true });
-  const base = `${slug(title)}${req.id ? `-${slug(req.id).slice(0, 8)}` : ""}`;
+  const base = `${slug(title)}${req.id ? `-${slug(req.id).slice(0, 8)}` : ""}${req.stem ? `-${req.stem}` : ""}`;
+  const previous = req.id ? keptAs(req.id, req.stem) : undefined;
+  // A name is taken by another sample's audio or .json (files that differ only in extension share a .json).
+  const taken = (f: string) => f !== previous && (existsSync(f) || (existsSync(jsonOf(f)) && jsonOf(f) !== (previous && jsonOf(previous))));
   let file = path.join(SAMPLES_DIR, `${base}${ext}`);
-  for (let i = 2; existsSync(file) && !(req.id && sampleMeta(file).id === req.id); i++) file = path.join(SAMPLES_DIR, `${base}-${i}${ext}`);
+  for (let i = 2; taken(file); i++) file = path.join(SAMPLES_DIR, `${base}-${i}${ext}`);
   if (data) writeFileSync(file, data);
   else if (path.resolve(req.from) !== file) copyFileSync(req.from, file);
 
@@ -75,15 +105,21 @@ export async function addSample(req: AddSampleRequest): Promise<SampleInfo> {
     const meta: SampleMeta = {
       id: req.id,
       title,
+      stem: req.stem,
       source: req.source ?? "local",
-      kind: req.kind ?? "sfx",
+      kind: req.kind ?? (req.stem ? "music" : "sfx"),
       duration: Math.round(duration * 1000) / 1000,
       onset: sync.onset,
       peak: sync.peak,
       added: new Date().toISOString(),
     };
-    writeFileSync(file.replace(/\.[^.]+$/, ".json"), JSON.stringify(meta, null, 2));
-    return { ...meta, file, ref: refOf(file) };
+    writeFileSync(jsonOf(file), JSON.stringify(meta, null, 2));
+    // The same id and stem kept under another name (an older title or format): the new file replaces it.
+    if (previous && previous !== file) {
+      rmSync(previous, { force: true });
+      if (jsonOf(previous) !== jsonOf(file)) rmSync(jsonOf(previous), { force: true });
+    }
+    return { ...meta, name: sampleName(meta, title), file, ref: refOf(file) };
   } catch (error) {
     // Not decodable audio: don't leave it in the library.
     rmSync(file, { force: true });
@@ -103,7 +139,9 @@ export function listSamples(): SampleInfo[] {
     .filter((i) => i.sample)
     .map((i) => {
       const file = lib.paths.get(i.id)!;
-      return { ...sampleMeta(file), title: i.name, kind: i.kind, file, ref: `${LIBRARY_REF}${i.id}` };
+      const meta = sampleMeta(file);
+      const title = (typeof meta.title === "string" && meta.title.trim()) || path.basename(file, path.extname(file));
+      return { ...meta, title, name: i.name, kind: i.kind, file, ref: `${LIBRARY_REF}${i.id}` };
     });
 }
 

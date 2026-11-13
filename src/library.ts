@@ -10,7 +10,7 @@ import path from "node:path";
  *   2. ~/.audiofx/library.json → { "folders": ["C:/...", ...] }, otherwise
  *   3. ~/Music and ~/Downloads.
  * ~/.audiofx/generated (ElevenLabs generations) and ~/.audiofx/samples (samples fetched from a sound
- * library, each with a .json next to it: id, title, source) are always included.
+ * library, each with a .json next to it: id, title, stem, source) are always included.
  */
 
 export type LibraryKind = "voice" | "music" | "sfx" | "mix";
@@ -38,10 +38,18 @@ export const CONFIG_FILE = path.join(AUDIOFX_HOME, "library.json");
 export const GENERATED_DIR = path.join(AUDIOFX_HOME, "generated");
 export const SAMPLES_DIR = path.join(AUDIOFX_HOME, "samples");
 
+/** A part of one recording: its full mix or one of its stems. A library id is kept once per stem. */
+export const STEMS = ["full", "drums", "bass", "instruments", "melody", "vocals"] as const;
+export type Stem = (typeof STEMS)[number];
+
+export const isStem = (value: unknown): value is Stem => STEMS.includes(value as Stem);
+
 /** The .json next to a sample: where it came from. Licensed audio stays out of the repo; this is its only record. */
 export interface SampleMeta {
   id?: string;
   title?: string;
+  /** Which part of the recording this file is (absent for a sample with no parts). */
+  stem?: Stem;
   /** Where it came from, e.g. "epidemic-sound", "elevenlabs", "local". */
   source?: string;
   kind?: LibraryKind;
@@ -61,6 +69,12 @@ export function sampleMeta(file: string): SampleMeta {
   } catch {
     return {};
   }
+}
+
+/** How a sample is shown: its title (or file name) and its stem, e.g. "Track title · drums". */
+export function sampleName(meta: SampleMeta, fallback: string): string {
+  const title = (typeof meta.title === "string" && meta.title.trim()) || fallback;
+  return isStem(meta.stem) ? `${title} · ${meta.stem}` : title;
 }
 
 export function libraryFolders(): string[] {
@@ -147,7 +161,7 @@ export function scanLibrary(): { items: LibraryItem[]; paths: Map<string, string
         const meta = origin === "sample" ? sampleMeta(full) : null;
         found.push({
           id: createHash("sha1").update(full).digest("hex").slice(0, 12),
-          name: (generated && promptOf(full)) || (typeof meta?.title === "string" && meta.title.trim()) || base,
+          name: (generated && promptOf(full)) || (meta ? sampleName(meta, base) : base),
           folder: generated ? "ElevenLabs" : meta ? (SOURCE_LABELS[meta.source ?? "local"] ?? String(meta.source)) : shortFolder(root, dir),
           // A sample is an effect unless its .json says otherwise (a music bed, a voice).
           kind: generated ? generatedKind(entry.name) : meta ? (KINDS.has(String(meta.kind)) ? meta.kind! : "sfx") : classify(full, st.size),
