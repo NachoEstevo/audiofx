@@ -41,7 +41,7 @@ The repo ships no audio. Reverb impulse responses are generated from exponential
 
 `pnpm tsx scripts/audit-levels.ts [voice] [music]` renders every effect with its defaults and reports the loudness change and true peak. Effects aim to stay within a few dB of the source unless the level change is the point (distance, behind the wall, tinnitus). The default `limiter` is a -1 dB safety ceiling that does not raise the level.
 
-The studio shows the level change against the original and the sample peak of every render. Renders are 16-bit, so it detects clipping by counting full-scale samples rather than with a peak threshold that would flag any master at -0.1 dB.
+The studio shows the level change against the original and the sample peak of every render. Effect renders are 32-bit float, so an over is still there to measure: the studio counts samples at or over full scale rather than using a peak threshold that would flag any master at -0.1 dB, and warns that an export would clip. What the speakers get is a copy held under full scale by a look-ahead limiter in the browser (`web/src/safety.ts`), so the preview does not crackle while the numbers stay those of the real render.
 
 ## Known ffmpeg quirk
 

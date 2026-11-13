@@ -115,11 +115,14 @@ export async function applyToFile(input: string, output: string, steps: EffectSt
   return compiled;
 }
 
-/** Processes an audio file (any format ffmpeg understands) and returns WAV. Used by the web studio. */
+/**
+ * Processes an audio file (any format ffmpeg understands) and returns a 32-bit float WAV. Used by the web
+ * studio: float keeps what goes over full scale, so the studio can measure it instead of hearing it clipped.
+ */
 export async function applyToBuffer(input: string, steps: EffectStep[], options: CompileOptions = {}): Promise<Buffer> {
   const compiled = compile(steps, options);
   const { stdout } = await runFfmpeg([
-    "-v", "error", "-i", input, "-filter_complex", toComplex(compiled.graph), "-map", "[out]", "-c:a", "pcm_s16le", "-ar", String(SAMPLE_RATE), "-f", "wav", "-",
+    "-v", "error", "-i", input, "-filter_complex", toComplex(compiled.graph), "-map", "[out]", "-c:a", "pcm_f32le", "-ar", String(SAMPLE_RATE), "-f", "wav", "-",
   ]);
   return stdout;
 }

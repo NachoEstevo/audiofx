@@ -21,8 +21,9 @@ function activeRmsDb(buffer: AudioBuffer): number {
 
 /**
  * Sample peak in dBFS (not true peak: inter-sample overs need oversampling) and how many samples sit at
- * full scale. Renders are 16-bit, so an over becomes a run of samples clipped at ±1: that count is the
- * honest "it clips" signal, where a peak threshold would flag any source already mastered to -0.1 dB.
+ * or over full scale. Renders are float, so the peak can read above 0 dBFS: an export to a file would clip
+ * there. The count is the honest "it clips" signal, where a peak threshold would flag any source already
+ * mastered to -0.1 dB. The speakers get a limited copy (safety.ts), so the preview itself does not crackle.
  */
 function samplePeak(buffer: AudioBuffer): { db: number; clipped: number } {
   let peak = 0;
@@ -37,6 +38,8 @@ function samplePeak(buffer: AudioBuffer): { db: number; clipped: number } {
   }
   return { db: peak > 0 ? 20 * Math.log10(peak) : -120, clipped };
 }
+
+import { safeForPlayback } from "./safety";
 
 /** Seconds to ease from one render into the next while playing. */
 const SWAP_FADE = 0.25;
@@ -53,6 +56,8 @@ export class Player {
   readonly analyser = this.ctx.createAnalyser();
   private readonly gain = this.ctx.createGain();
   private buffers: Partial<Record<Track, AudioBuffer>> = {};
+  /** What the speakers get for each track: the buffer itself, or a limited copy when it goes over full scale. */
+  private playable: Partial<Record<Track, AudioBuffer>> = {};
   private levels: Partial<Record<Track, number>> = {};
   private peaks: Partial<Record<Track, { db: number; clipped: number }>> = {};
   private node?: AudioBufferSourceNode;
@@ -94,6 +99,7 @@ export class Player {
   /** Loads an already decoded buffer (e.g. from the render cache). */
   setBuffer(track: Track, buffer: AudioBuffer) {
     this.buffers[track] = buffer;
+    this.playable[track] = safeForPlayback(this.ctx, buffer);
     this.levels[track] = activeRmsDb(buffer);
     this.peaks[track] = samplePeak(buffer);
     this.applyGain();
@@ -115,6 +121,7 @@ export class Player {
     this.stop();
     this.playing = false;
     this.buffers = {};
+    this.playable = {};
     this.levels = {};
     this.peaks = {};
     this.offset = 0;
@@ -123,6 +130,7 @@ export class Player {
 
   dropProcessed() {
     delete this.buffers.processed;
+    delete this.playable.processed;
     delete this.levels.processed;
     delete this.peaks.processed;
     this.applyGain();
@@ -223,7 +231,7 @@ export class Player {
   }
 
   private startAt(at: number, fade = 0) {
-    const buffer = this.buffer();
+    const buffer = this.playable[this.track] ?? this.playable.original;
     if (!buffer) return;
     const node = this.ctx.createBufferSource();
     node.buffer = buffer;
