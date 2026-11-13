@@ -28,7 +28,10 @@ export function Stage(props: {
   regions: { from: number; to: number; label?: string }[];
   downloadUrl: string | null;
   onHoldOriginal: (on: boolean) => void;
-  onAddLimiter: () => void;
+  /** With it, the meter offers a limiter when the render clips. */
+  onAddLimiter?: () => void;
+  /** false hides the level and peak meter (a screen that shows its own measurements). */
+  meter?: boolean;
 }) {
   const { player, render } = props;
   const time = usePlayerTime(player);
@@ -101,7 +104,7 @@ export function Stage(props: {
             {props.timed ? "Tap the waveform to move the moment: the hit lands there." : "Tap the waveform to jump there."}
             {render.status === "error" && <span className="ml-2 text-danger">{render.error}</span>}
           </p>
-          <OutputMeter player={player} onAddLimiter={props.onAddLimiter} />
+          {props.meter !== false && <OutputMeter player={player} onAddLimiter={props.onAddLimiter} />}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="mr-1 font-mono text-xs text-muted-foreground tabular-nums">
@@ -164,13 +167,12 @@ export function Stage(props: {
  * What an engineer checks after every insert: how much the chain moved the level (M compensates it while
  * listening, the export does not) and whether the render reaches full scale.
  */
-function OutputMeter({ player, onAddLimiter }: { player: Player; onAddLimiter: () => void }) {
+function OutputMeter({ player, onAddLimiter }: { player: Player; onAddLimiter?: () => void }) {
   const processed = player.peak("processed");
   const diff = player.levelDiffDb;
   if (!processed || diff === null) return null;
   const peak = processed.db;
-  // A few full-scale samples happen in loud masters; a run of them, more than the original had, is clipping.
-  const over = processed.clipped > Math.max(8, (player.peak("original")?.clipped ?? 0) * 1.5);
+  const over = player.clipping;
   return (
     <div className="mt-3 flex min-h-9 flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl bg-muted/70 px-3 py-1.5 text-xs">
       <span title="Level of the processed render against the original (RMS of the non-silent parts). M matches them while you listen; the export keeps the difference.">
@@ -186,7 +188,7 @@ function OutputMeter({ player, onAddLimiter }: { player: Player; onAddLimiter: (
           {peak <= -100 ? "−∞" : `${peak > 0 ? "+" : ""}${peak.toFixed(1)}`} dBFS
         </span>
       </span>
-      {over && (
+      {over && onAddLimiter && (
         <button onClick={onAddLimiter} className="ml-auto inline-flex h-7 cursor-pointer items-center rounded-full bg-foreground px-3 text-white hover:bg-foreground/85">
           Clipping · add a limiter
         </button>

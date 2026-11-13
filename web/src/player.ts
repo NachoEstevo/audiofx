@@ -58,12 +58,24 @@ export class Player {
   loop = true;
   matchLoudness = false;
   onChange?: () => void;
+  private listeners = new Set<() => void>();
 
   constructor() {
     this.analyser.fftSize = 4096;
     this.analyser.smoothingTimeConstant = 0.8;
     this.gain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
+  }
+
+  /** Listens to changes besides `onChange` (the screen's own): the header logo follows the active screen's player. */
+  subscribe = (fn: () => void) => {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  };
+
+  private changed() {
+    this.onChange?.();
+    for (const fn of this.listeners) fn();
   }
 
   async load(track: Track, data: ArrayBuffer) {
@@ -79,7 +91,7 @@ export class Player {
     this.peaks[track] = samplePeak(buffer);
     this.applyGain();
     if (this.playing && track === this.track) this.restart();
-    this.onChange?.();
+    this.changed();
   }
 
   /** Buffer of the active track; the original while there is no processed one yet. */
@@ -99,7 +111,7 @@ export class Player {
     this.levels = {};
     this.peaks = {};
     this.offset = 0;
-    this.onChange?.();
+    this.changed();
   }
 
   dropProcessed() {
@@ -108,7 +120,7 @@ export class Player {
     delete this.peaks.processed;
     this.applyGain();
     if (this.playing && this.track === "processed") this.restart();
-    this.onChange?.();
+    this.changed();
   }
 
   get duration() {
@@ -139,6 +151,12 @@ export class Player {
     return this.peaks[track];
   }
 
+  /** A few full-scale samples happen in loud masters; a run of them, more than the original had, is clipping. */
+  get clipping(): boolean {
+    const processed = this.peaks.processed;
+    return !!processed && processed.clipped > Math.max(8, (this.peaks.original?.clipped ?? 0) * 1.5);
+  }
+
   get time() {
     if (!this.playing) return this.offset;
     const t = this.offset + this.ctx.currentTime - this.startedAt;
@@ -148,7 +166,7 @@ export class Player {
   setMatchLoudness(on: boolean) {
     this.matchLoudness = on;
     this.applyGain();
-    this.onChange?.();
+    this.changed();
   }
 
   setLoop(on: boolean) {
@@ -156,7 +174,7 @@ export class Player {
     this.loop = on;
     this.offset = at;
     if (this.playing) this.restart();
-    this.onChange?.();
+    this.changed();
   }
 
   private applyGain() {
@@ -193,7 +211,7 @@ export class Player {
       if (this.node !== node) return;
       this.playing = false;
       this.offset = 0;
-      this.onChange?.();
+      this.changed();
     };
     this.node = node;
     this.offset = offset;
@@ -206,14 +224,14 @@ export class Player {
     this.stop();
     this.startAt(this.offset);
     this.playing = true;
-    this.onChange?.();
+    this.changed();
   }
 
   pause() {
     this.offset = this.time;
     this.stop();
     this.playing = false;
-    this.onChange?.();
+    this.changed();
   }
 
   toggle() {
@@ -227,7 +245,7 @@ export class Player {
       this.stop();
       this.startAt(this.offset);
     }
-    this.onChange?.();
+    this.changed();
   }
 
   setTrack(track: Track) {
@@ -240,6 +258,6 @@ export class Player {
       this.stop();
       this.startAt(at);
     }
-    this.onChange?.();
+    this.changed();
   }
 }

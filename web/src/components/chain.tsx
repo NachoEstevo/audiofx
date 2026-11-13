@@ -189,7 +189,8 @@ export function SamplePicker(props: { value: string; samples: SampleOption[]; la
   );
 }
 
-function ParamControl({ spec, value, moment, samples, onChange }: { spec: ParamSpec; value: ParamValue; moment: number; samples: SampleOption[]; onChange: (v: ParamValue) => void }) {
+/** One param's control, by its spec: slider (log for frequencies), time field with "Use the moment", choices, switch or sample. */
+export function ParamControl({ spec, value, moment, samples, onChange }: { spec: ParamSpec; value: ParamValue; moment: number; samples: SampleOption[]; onChange: (v: ParamValue) => void }) {
   if (spec.type === "file") {
     return (
       <div className="min-w-0 sm:col-span-2" title={spec.description}>
