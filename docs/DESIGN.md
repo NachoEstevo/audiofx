@@ -25,6 +25,14 @@ The studio server accepts only `library:<id>` references in a render request, ne
 
 Samples are kept in `~/.audiofx/samples` with a `.json` next to each file (id, title, source, measured duration and sync points). `sfx sample add` downloads from a URL without storing it: signed links from a sound library expire and are not the user's to publish.
 
+## Mix
+
+- `src/core/mix.ts` is pure like the compiler: a project (tracks of role voice, music or sfx; clips placed with `at`; chains per clip, track and master) compiles to one `-filter_complex`. Each embedded chain gets its own label prefix so they never collide. A track with steps and no clips is silence that cinema effects turn into sound.
+- **Ducking by an exact depth**: the voices open a gate, the gate drives `sidechaincompress` over a constant signal, and the music is multiplied by that curve. The depth is then the same however loud the voice is, which a compressor keyed straight by the voice cannot give.
+- **Loudness in two passes**: `renderMix` renders once without the loudness stage, measures it (EBU R128) and applies a fixed gain before the ceiling. Single-pass `loudnorm` landed up to 4 LU under the target on mixes with a wide loudness range and reshaped their dynamics. A printed graph (`compileMix` alone) still uses the single-pass stage.
+- Disk work (resolving `library:<id>`, probing durations, measuring clip alignment) lives in `src/core/mix-run.ts`; cuts come from ffmpeg's `scdet` in `src/core/media.ts`.
+- `src/core/sections.ts` compares the level after each point with the level before it, overall and below 150 Hz, and snaps the change to the nearest attack. It proposes drop candidates with numbers; which one is the drop is for the user's ear.
+
 ## No licensed material
 
 The repo ships no audio. Reverb impulse responses are generated from exponentially decaying noise, and device speakers are short convolution kernels built in code. Noises and IRs use a seed (`--seed`), so the same chain renders byte-identical output.

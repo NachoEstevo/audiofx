@@ -5,7 +5,7 @@
 # AudioFX
 
 **Sound design for video, as plain ffmpeg filtergraphs.**
-62 effects, from underwater, old radio and phone calls to trailer hits, risers and whooshes,
+65 effects, from underwater, old radio and phone calls to trailer hits, risers and whooshes,
 built so coding agents (and people) can use them when they put a video together.
 
 </div>
@@ -47,6 +47,19 @@ sfx describe am-radio                          # params and when to use it
 ```
 
 A step is `effect[:param=value,...][@from-to]`. Steps run in order, `@from-to` limits an effect to a window, and video outputs keep the picture untouched. Run `pnpm link --global` to get `sfx` on your PATH, or call `node bin/sfx.mjs`. The full catalog is in [CATALOG.md](CATALOG.md).
+
+### Mixing a video
+
+```bash
+sfx cuts clip.mp4                                  # the hard cuts: where hits and whooshes land
+sfx mix final.mp4 --video clip.mp4 --voice vo.wav --music song.mp3 --sfx door.wav@6
+sfx mix final.mp4 --video clip.mp4 --voice vo.wav --music song.mp3 --print > mix.json
+sfx mix mix.json final.mp4                         # the same from a project file you can edit
+sfx sections song.mp3                              # where a track rises (drop candidates) and falls
+sfx apply interview.wav clean.wav denoise voice-clean de-esser
+```
+
+`sfx mix` lays voice, music and effect tracks on a timeline, ducks the music under the voice by an exact depth in dB, and brings the master to a loudness target (-14 LUFS by default) under a -1 dB ceiling. A project file adds per-clip, per-track and master effect chains, so the stems of a song can be separate tracks and only the drums go underwater. Video outputs keep the picture untouched.
 
 ## ElevenLabs
 

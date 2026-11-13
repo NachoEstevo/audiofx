@@ -112,7 +112,7 @@ sfx analyze final.mp4
 
 - `voice-clean` first on the voice, `gate` only if it has background noise between phrases.
 - Music under a voice usually sits 12–18 dB below it: the track `gain` sets the bed and `duck` takes it further down while the voice speaks.
-- The master is normalized toward -14 LUFS with a -1 dB ceiling. Check it with `sfx analyze`: a mix with long quiet stretches can land several LU under; then add `"master": { "loudness": -10 }` (the target raised by the shortfall) and mix again.
+- The master is normalized toward -14 LUFS with a -1 dB ceiling. Check it with `sfx analyze`: when the gain needed pushes peaks into the ceiling, the mix lands under the target.
 
 ## Integrations
 

@@ -2,7 +2,7 @@
 
 <!-- Generated with `pnpm catalog`. Do not edit by hand: the source is src/core/effects. -->
 
-62 effects. CLI step format: `effect:param=value,param=value@from-to`. Effects marked _at a moment_ are anchored with `at=<seconds>`.
+65 effects. CLI step format: `effect:param=value,param=value@from-to`. Effects marked _at a moment_ are anchored with `at=<seconds>`.
 
 ## Cinema & trailer
 
@@ -267,6 +267,21 @@ Pushes the source away: fewer highs, less level and relatively more reverb.
 | --- | --- | --- |
 | `distance` Distance | 0.6 | 0–1 |
 | `space` Setting | outdoor | outdoor, indoor |
+
+### `doppler` — Pass-by (Doppler) _(at a moment)_
+
+A source passing the camera: pitch above normal while it approaches and below as it leaves (the physical Doppler curve), level peaking at the pass, a pan across the field and duller sound far away. Keeps the duration.
+
+**When:** A car, motorbike, train, plane or drone going past. Apply it to the isolated sound, usually a sample that then gets layered (a car sample rendered through doppler, then mixed in with layer), not to a whole mix: it bends the pitch of everything.
+
+| Param | Default | Range |
+| --- | --- | --- |
+| `at` Closest at | 2 | 0–600 s |
+| `speed` Speed | 90 | 10–600 km/h |
+| `distance` Closest distance | 10 | 1–300 m |
+| `direction` Direction | left-right | left-right, right-left, center |
+| `falloff` Level falloff | 1 | 0–1 |
+| `air` Air | 0.5 | 0–1 |
 
 ### `underwater` — Underwater
 
@@ -661,6 +676,29 @@ A typical voice chain: high pass, de-esser, presence and compression.
 | `presence` Presence | 2.5 | 0–8 dB |
 | `compression` Compression | 0.5 | 0–1 |
 | `deess` De-esser | 0.3 | 0–1 |
+
+### `denoise` — Denoise
+
+Lowers steady background noise (hiss, fan, room tone) under a voice with spectral noise reduction. Compensates its latency.
+
+**When:** Dialogue or voice-over recorded at home or on location with a constant hiss or room noise, before voice-clean and the music. It does not remove clicks, hum or reverb.
+
+| Param | Default | Range |
+| --- | --- | --- |
+| `reduction` Reduction | 12 | 1–40 dB |
+| `floor` Noise floor | -50 | -80–-20 dB |
+| `noise` Noise type | mixed | mixed, hiss, room |
+
+### `de-esser` — De-esser
+
+Tames harsh 's' and 'sh' sounds: while a sibilant sounds, the highs above the chosen frequency go down.
+
+**When:** Voices with sharp esses (close mics, bright voices, generated voices), especially after a presence boost or compression. Its detector follows level: apply it to the voice at its final level.
+
+| Param | Default | Range |
+| --- | --- | --- |
+| `amount` Amount | 0.6 | 0–1 |
+| `freq` Frequency | 4000 | 1000–8000 Hz |
 
 ### `compressor` — Compressor
 
