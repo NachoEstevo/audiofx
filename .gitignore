@@ -1,0 +1,31 @@
+# Dependencies and builds
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Secrets: the ElevenLabs key lives in .env
+.env
+.env.*
+
+# Rendered or generated audio and video (keep outputs out of the repo)
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.aac
+*.opus
+*.aif
+*.aiff
+*.mp4
+*.mov
+*.mkv
+*.webm
+
+# Local tooling
+.claude/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db

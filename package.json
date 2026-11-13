@@ -1,0 +1,58 @@
+{
+  "name": "audiofx",
+  "version": "0.1.0",
+  "description": "Sound design effects for video as ffmpeg filtergraphs: CLI, web studio, ElevenLabs generation and a catalog for agents.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NachoEstevo/audiofx.git"
+  },
+  "homepage": "https://github.com/NachoEstevo/audiofx#readme",
+  "keywords": [
+    "ffmpeg",
+    "sound-design",
+    "audio-effects",
+    "video",
+    "elevenlabs",
+    "claude-code",
+    "agent-skills"
+  ],
+  "type": "module",
+  "private": true,
+  "bin": {
+    "sfx": "./bin/sfx.mjs"
+  },
+  "scripts": {
+    "sfx": "tsx src/cli.ts",
+    "studio": "vite build && tsx src/cli.ts studio",
+    "dev:web": "vite",
+    "dev:server": "tsx watch src/cli.ts studio --no-open",
+    "build:web": "vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "test": "vitest run",
+    "catalog": "tsx src/cli.ts catalog > CATALOG.md",
+    "skill:install": "node scripts/install-skill.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.8",
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.6",
+    "@types/react-dom": "19.1.6",
+    "@vitejs/plugin-react": "4.5.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "tailwindcss": "4.1.8",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3",
+    "vite": "6.3.5",
+    "vitest": "3.2.3"
+  },
+  "dependencies": {
+    "clsx": "2.1.1",
+    "lucide-react": "0.511.0",
+    "tailwind-merge": "3.3.0"
+  }
+}

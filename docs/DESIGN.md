@@ -1,0 +1,40 @@
+# How AudioFX is built
+
+## One source of truth
+
+Effects live in `src/core/effects/*.ts`. Each one declares its params (ranges, defaults, units), a description, "when to use it", and a `build` function that returns a piece of an ffmpeg filtergraph. The CLI, the studio and `CATALOG.md` (`pnpm catalog`) all read from there.
+
+`src/core/compile.ts` chains the steps into one graph that works with `ffmpeg -af`:
+
+- **Windows** (`@from-to`): the signal is split into dry and processed, and crossfaded with `--fade` seconds at each edge.
+- **Mix** (`--mix`): dry/wet blend per step.
+- **Tails**: effects with a tail (reverb, echo, ghost…) add 3 s of silence at the end by default (`--tail`), so the tail is not cut.
+- **Sync**: the sound onset never shifts by more than one frame at 24 fps; the tests check it for every effect. Effects that change the duration (`slowmo`, `speedup`, `tape-stop`, `reverse`, `reverse-swell`, `stutter`) don't accept windows.
+
+## Cinema moments
+
+`src/core/effects/cinema.ts` synthesizes hits, risers, whooshes, sub drops and braams inside the filtergraph (`aevalsrc`, `anoisesrc`, sweeps with `asendcmd`) and mixes them in at `at` with `adelay` + `amix`. Chirps integrate the phase so they don't click. Levels were calibrated by measuring RMS and peak per window over a real voice and song.
+
+## No licensed material
+
+Reverb impulse responses are generated from exponentially decaying noise, and device speakers are short convolution kernels built in code. Noises and IRs use a seed (`--seed`), so the same chain renders byte-identical output.
+
+## Gain staging
+
+`pnpm tsx scripts/audit-levels.ts [voice] [music]` renders every effect with its defaults and reports the loudness change and true peak. Effects aim to stay within a few dB of the source unless the level change is the point (distance, behind the wall, tinnitus). The default `limiter` is a -1 dB safety ceiling that does not raise the level.
+
+The studio shows the level change against the original and the sample peak of every render. Renders are 16-bit, so it detects clipping by counting full-scale samples rather than with a peak threshold that would flag any master at -0.1 dB.
+
+## Known ffmpeg quirk
+
+ffmpeg 7.1's `vibrato` filter outputs NaN or garbage in its first milliseconds and contaminates the following filters. AudioFX replaces it with a modulated delay (a single-voice `chorus` with no dry signal).
+
+## Studio
+
+- `src/server.ts` serves the built web app, normalizes sources to 48 kHz WAV, renders chains with the same compiler, and calls ElevenLabs. The browser only ever gets ids for library files, never paths.
+- `src/library.ts` walks the configured folders up to 5 levels deep without following links or junctions.
+- **Orbs**: browsers allow about 16 WebGL contexts per page, so one hidden context renders every tile's orb and copies the frame into a 2D canvas. Idle orbs are painted once; only hovered, playing or rendering ones animate.
+
+## ElevenLabs
+
+`src/elevenlabs.ts` uses plain `fetch` against the REST API (no SDK): sound generation, text to speech and music. It looks for `ELEVENLABS_API_KEY` in the environment, then in `.env` in the current folder, the repo and `~/.audiofx/.env`, and never prints the key. `ELEVENLABS_API_BASE` points it elsewhere; the tests use a stub.
