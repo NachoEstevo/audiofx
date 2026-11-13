@@ -161,16 +161,18 @@ export const transitionEffects: EffectDefinition[] = [
       const at = num(p, "at");
       const L = num(p, "length");
       const steps = Math.max(10, Math.round(L / 0.02));
+      // A unique instance name: two tape stops (or two mix tracks) in one graph must not share commands.
+      const rb = `rubberband@${ctx.label("ts")}`;
       const cmds: string[] = [];
       for (let i = 0; i <= steps; i++) {
         const tau = (L * i) / steps; // output time inside the brake
         const rate = Math.max(0.03, 1 - tau / L);
         const inputTime = at + tau - (tau * tau) / (2 * L); // integral of the speed
-        cmds.push(`${n(inputTime)} rubberband@ts tempo ${n(rate)}, rubberband@ts pitch ${n(rate)}`);
+        cmds.push(`${n(inputTime)} ${rb} tempo ${n(rate)}, ${rb} pitch ${n(rate)}`);
       }
       return chain(ctx.input, ctx.output, [
         `asendcmd=c='${cmds.join(";")}'`,
-        "rubberband@ts=tempo=1:pitch=1",
+        `${rb}=tempo=1:pitch=1`,
         `atrim=end=${n(at + L)}`,
         `afade=t=out:st=${n(at + L - 0.08)}:d=0.08`,
       ]);
