@@ -25,6 +25,8 @@ export interface Route {
 interface Attached {
   player: Player;
   onFile?: (file: File) => void;
+  /** What the drop overlay says a dropped file becomes. */
+  dropLabel?: string;
 }
 
 interface ShellApi {
@@ -47,7 +49,7 @@ function useShell(): ShellApi {
  * receives the header upload and dropped files (without it, the upload button is hidden); when another
  * screen is shown, its audio stops.
  */
-export function useScreen(active: boolean, player: Player, onFile?: (file: File) => void) {
+export function useScreen(active: boolean, player: Player, onFile?: (file: File) => void, dropLabel?: string) {
   const shell = useShell();
   const fileRef = useRef(onFile);
   fileRef.current = onFile;
@@ -59,8 +61,8 @@ export function useScreen(active: boolean, player: Player, onFile?: (file: File)
       player.setTrack("processed");
       return;
     }
-    return shell.attach({ player, onFile: acceptsFiles ? (file) => fileRef.current?.(file) : undefined });
-  }, [active, player, shell, acceptsFiles]);
+    return shell.attach({ player, onFile: acceptsFiles ? (file) => fileRef.current?.(file) : undefined, dropLabel });
+  }, [active, player, shell, acceptsFiles, dropLabel]);
   return { toast: shell.toast, pickFile: shell.pickFile };
 }
 
@@ -212,7 +214,7 @@ export function Shell({ routes }: { routes: Route[] }) {
         )}
         {dragging && onFile && (
           <div className="pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-3xl border-2 border-dashed border-foreground/30 bg-background/90 font-display text-2xl font-light tracking-[-0.02em]">
-            Drop an audio or video file to use it as the source
+            {attached?.dropLabel ?? "Drop an audio or video file to use it as the source"}
           </div>
         )}
       </div>

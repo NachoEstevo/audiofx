@@ -12,32 +12,10 @@ import { Player } from "../player";
 import { CATEGORY_COLORS, sampleSound, stepsAt, type Slot, type Slots, type Sound } from "../recipes";
 import { HeaderSlot, Kbd, ShortcutHint, useScreen, type ScreenProps } from "../shell";
 import { initialMoment, useSource } from "../source";
+import { fromSteps, toStep } from "../steps";
 
 const CACHE_SIZE = 16;
 const IDLE_COLOR = "#1A73F2";
-
-let keySeq = 0;
-const toStep = (s: EffectStep): Step => ({
-  key: `k${++keySeq}`,
-  effect: s.effect,
-  params: resolveParams(getEffect(s.effect), s.params),
-  windowed: s.from !== undefined || s.to !== undefined,
-  bypassed: false,
-  from: s.from ?? 0,
-  to: s.to ?? 2,
-  fade: s.fade ?? 0.25,
-  mix: s.mix ?? 1,
-});
-
-/** What goes to the compiler: no UI keys, no bypassed steps, and no window unless one was asked for. */
-function fromSteps(steps: Step[]): EffectStep[] {
-  return steps.filter((s) => !s.bypassed).map(({ effect, params, windowed, from, to, fade, mix }) => {
-    const step: EffectStep = { effect, params };
-    if (windowed) Object.assign(step, { from, to, fade });
-    if (mix !== undefined && mix < 1) step.mix = mix;
-    return step;
-  });
-}
 
 /** Try sounds over your audio, chain them, tweak and export. */
 export function SoundsScreen({ active }: ScreenProps) {

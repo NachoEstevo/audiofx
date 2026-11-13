@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { analyzeFile, applyToBuffer, prepareSteps, runFfmpeg, type EffectStep } from "./core/index.js";
 import { findApiKey, generate, SETUP_HINT, type GenerateRequest } from "./elevenlabs.js";
 import { scanLibrary } from "./library.js";
+import { createMixApi } from "./mix-server.js";
 import { clearVerdict, readReview, ReviewError, setVerdict } from "./review.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -166,18 +167,22 @@ export async function startStudio({ port, open }: { port: number; open: boolean 
   const librarySources = new Map<string, Source>();
   let library = scanLibrary();
 
-  /** Normalizes any audio or video to 48 kHz stereo WAV (trimmed for preview). */
-  async function addSource(input: string, name: string): Promise<Source> {
+  /** Normalizes any audio or video to 48 kHz stereo WAV (trimmed for preview: the Mix screen keeps more). */
+  async function addSource(input: string, name: string, maxSeconds = MAX_PREVIEW_SECONDS): Promise<Source> {
     const id = randomUUID().slice(0, 8);
     const file = path.join(workDir, `${id}.wav`);
-    await runFfmpeg(["-y", "-v", "error", "-i", input, "-vn", "-t", String(MAX_PREVIEW_SECONDS), "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", file]);
+    await runFfmpeg(["-y", "-v", "error", "-i", input, "-vn", "-t", String(maxSeconds), "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", file]);
     const { duration } = await analyzeFile(file);
     const source = { id, name, file, duration };
     sources.set(id, source);
     return source;
   }
 
+  // The Mix screen: videos, cuts, mix previews and exports (src/mix-server.ts).
+  const mixApi = createMixApi({ workDir, sources, addSource, library: () => library });
+
   async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
+    if (await mixApi.handle(req, res, url)) return;
     if (req.method === "POST" && url.pathname === "/api/sources") {
       const name = decodeURIComponent(String(req.headers["x-filename"] ?? "file"));
       const length = Number(req.headers["content-length"] ?? 0);

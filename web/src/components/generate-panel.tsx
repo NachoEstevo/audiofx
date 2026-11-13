@@ -46,12 +46,12 @@ const DURATIONS: Record<GenerateRequest["kind"], (number | undefined)[]> = {
  * Generates a source with ElevenLabs through the local server (the key never reaches the browser).
  * The result is saved in ~/.audiofx/generated, so it stays in the library to reuse with any effect.
  */
-export function GeneratePanel(props: { open: boolean; busy: boolean; onGenerate: (request: GenerateRequest) => void }) {
+export function GeneratePanel(props: { open: boolean; busy: boolean; initialKind?: GenerateRequest["kind"]; onGenerate: (request: GenerateRequest) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [checking, setChecking] = useState(false);
-  const [kind, setKind] = useState<GenerateRequest["kind"]>("sfx");
+  const [kind, setKind] = useState<GenerateRequest["kind"]>(props.initialKind ?? "sfx");
   const [prompt, setPrompt] = useState("");
-  const [duration, setDuration] = useState<number | undefined>(undefined);
+  const [duration, setDuration] = useState<number | undefined>(props.initialKind === "music" ? 30 : undefined);
   const [loop, setLoop] = useState(false);
   const [instrumental, setInstrumental] = useState(true);
 
