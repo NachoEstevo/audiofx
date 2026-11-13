@@ -290,6 +290,18 @@ describe("master loudness on a wide dynamic range", () => {
   });
 });
 
+describe("master loudness against the ceiling", () => {
+  it("pushes into the limiter when a loud hit keeps the plain gain short of the target", async () => {
+    const project: MixProject = {
+      version: 1,
+      tracks: [musicTrack({ gain: -20 }), { id: "fx", role: "sfx", clips: [], steps: [{ effect: "hit", params: { at: 5 } }] }],
+    };
+    const analysis = await analyzeFile(await render(project));
+    expect(Math.abs(analysis.integratedLufs! + 14)).toBeLessThan(1);
+    expect(analysis.peakDb!).toBeLessThan(-0.9);
+  });
+});
+
 describe("video", () => {
   it("copies the picture, replaces the audio with the mix and keeps the video's length", async () => {
     const project: MixProject = { version: 1, video, tracks: [{ id: "fx", role: "sfx", clips: [{ file: click, at: 1 }] }], master: { loudness: null } };

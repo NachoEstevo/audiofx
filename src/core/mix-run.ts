@@ -107,23 +107,39 @@ export async function prepareMix(project: MixProject, options: PrepareMixOptions
   return { project: { ...project, video, tracks, master }, media };
 }
 
+/** How far the limiter may be driven past the measured gain to reach the target (dB). */
+const MAX_LIMITER_PUSH = 6;
+
 /**
- * The master gain that brings a prepared mix to its loudness target: renders it once without the loudness
- * stage, measures the integrated loudness (EBU R128) and returns the difference. undefined when the project
- * turns loudness off or the mix is too quiet or short to measure.
+ * The master gain that brings a prepared mix to its loudness target. Renders the mix without the loudness
+ * stage and measures it (EBU R128); while peaks hit the ceiling and the result is still short, measures again
+ * and pushes into the limiter by the shortfall, up to MAX_LIMITER_PUSH in three tries. undefined when the project turns
+ * loudness off; 0 when the mix is too quiet or short to measure.
  */
 async function loudnessGain(prepared: PreparedMix): Promise<number | undefined> {
   const target = prepared.project.master?.loudness === undefined ? DEFAULT_LOUDNESS : prepared.project.master.loudness;
   if (target === null) return undefined;
-  const flat = compileMix(prepared.project, prepared.media, { masterGain: 0 });
-  const { stderr } = await runFfmpeg([
-    "-v", "info", ...flat.inputs.flatMap((input) => ["-i", input]),
-    "-filter_complex", `${flat.filterComplex};[out]ebur128=framelog=quiet[measured]`, "-map", "[measured]", "-f", "null", "-",
-  ]);
-  const last = [...stderr.matchAll(/I:\s+(-?[\d.]+) LUFS/g)].pop();
-  const measured = last ? Number(last[1]) : NaN;
+  const measure = async (masterGain: number) => {
+    const mix = compileMix(prepared.project, prepared.media, { masterGain });
+    const { stderr } = await runFfmpeg([
+      "-v", "info", ...mix.inputs.flatMap((input) => ["-i", input]),
+      "-filter_complex", `${mix.filterComplex};[out]ebur128=framelog=quiet[measured]`, "-map", "[measured]", "-f", "null", "-",
+    ]);
+    const last = [...stderr.matchAll(/I:\s+(-?[\d.]+) LUFS/g)].pop();
+    return last ? Number(last[1]) : NaN;
+  };
+  const flat = await measure(0);
   // ebur128 reports -70 for silence and for less than its 400 ms window: nothing to normalize.
-  return Number.isFinite(measured) && measured > -60 ? target - measured : 0;
+  if (!Number.isFinite(flat) || flat < -60) return 0;
+  const gain = target - flat;
+  if (gain <= 0) return gain;
+  let push = 0;
+  for (let pass = 0; pass < 3 && push < MAX_LIMITER_PUSH; pass++) {
+    const short = target - (await measure(gain + push));
+    if (short <= 0.5) break;
+    push = Math.min(MAX_LIMITER_PUSH, push + short);
+  }
+  return gain + push;
 }
 
 /** A rendered mix: what was compiled and where it was written. */
@@ -135,7 +151,7 @@ export interface MixRender extends CompiledMix {
  * Prepares, compiles and renders a project. The output is an audio file (codec by extension), a video
  * (the project's `video` picture copied untouched, the mix as its audio, cut to the project duration), or
  * "buffer" for a 16-bit 48 kHz WAV in memory (the studio preview). Loudness is normalized in two passes
- * (measure, then a fixed gain before the ceiling), so the mix is rendered twice unless `master.loudness` is null.
+ * (measure, then a fixed gain before the ceiling), so the mix is rendered two to five times unless `master.loudness` is null.
  */
 export async function renderMix(project: MixProject, output: "buffer", options?: PrepareMixOptions): Promise<Buffer>;
 export async function renderMix(project: MixProject, output: string, options?: PrepareMixOptions): Promise<MixRender>;

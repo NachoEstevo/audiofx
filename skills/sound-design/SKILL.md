@@ -122,7 +122,7 @@ sfx mix --video cut.mp4 --voice vo.wav@1.5 --music song.wav --print > mix.json
 ```
 
 - The music goes down 10 dB while a voice plays (`--duck <dB>`, `--no-duck`). An `--sfx` clip's attack lands on its second, like `align=onset`.
-- The master is normalized toward -14 LUFS (`--loudness <LUFS|off>`), then a -1 dB ceiling. The mix is measured and brought to the target with a fixed gain, so its dynamics are kept; when that gain pushes peaks into the ceiling the result lands under the target, so check with `sfx analyze`. A video's AAC audio can peak about 0.3 dB over the ceiling (`"master": { "ceiling": -1.5 }` keeps it at -1 dBTP).
+- The master is normalized toward -14 LUFS (`--loudness <LUFS|off>`), then a -1 dB ceiling. The mix is measured and brought to the target with a fixed gain, so its dynamics are kept; when peaks hit the ceiling first, the limiter is pushed up to 6 dB to close the gap, so a mix with very loud hits can still land under the target: check with `sfx analyze`. A video's AAC audio can peak about 0.3 dB over the ceiling (`"master": { "ceiling": -1.5 }` keeps it at -1 dBTP).
 - The mix lasts `--duration`, else the video's length, else up to the end of the last clip. With `--video` and a video output, the picture is copied and the audio replaced.
 - `--print` writes the project JSON instead of rendering: edit it, then `sfx mix mix.json final.mp4`.
 
