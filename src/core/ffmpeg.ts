@@ -39,7 +39,8 @@ export interface RunResult {
   stderr: string;
 }
 
-export function runFfmpeg(args: string[], input?: Buffer): Promise<RunResult> {
+/** Runs ffmpeg and resolves with its exit code, whatever it is (`ffmpeg -i <file>` alone always exits 1). */
+export function execFfmpeg(args: string[], input?: Buffer): Promise<RunResult & { code: number | null }> {
   return new Promise((resolve, reject) => {
     const proc = spawn(resolveFfmpeg(), ["-hide_banner", "-nostdin", ...args], { windowsHide: true });
     const out: Buffer[] = [];
@@ -47,38 +48,49 @@ export function runFfmpeg(args: string[], input?: Buffer): Promise<RunResult> {
     proc.stdout.on("data", (d: Buffer) => out.push(d));
     proc.stderr.on("data", (d: Buffer) => (err += d.toString()));
     proc.on("error", reject);
-    proc.on("close", (code) => {
-      if (code === 0) resolve({ stdout: Buffer.concat(out), stderr: err });
-      else reject(new Error(`ffmpeg exited with code ${code}:\n${err.trim().split("\n").slice(-8).join("\n")}`));
-    });
+    proc.on("close", (code) => resolve({ code, stdout: Buffer.concat(out), stderr: err }));
     if (input) proc.stdin.end(input);
     else proc.stdin.end();
   });
 }
 
+export async function runFfmpeg(args: string[], input?: Buffer): Promise<RunResult> {
+  const { code, stdout, stderr } = await execFfmpeg(args, input);
+  if (code !== 0) throw new Error(`ffmpeg exited with code ${code}:\n${stderr.trim().split("\n").slice(-8).join("\n")}`);
+  return { stdout, stderr };
+}
+
 const VIDEO_EXT = new Set([".mp4", ".mov", ".mkv", ".webm", ".m4v"]);
 
-function codecArgs(output: string): string[] {
+/** True for the containers AudioFX writes video to (the picture is copied, the audio replaced). */
+export const isVideoFile = (file: string) => VIDEO_EXT.has(path.extname(file).toLowerCase());
+
+/** Audio encoder args for an output file, chosen by its extension. */
+export function audioCodecArgs(output: string): string[] {
   const ext = path.extname(output).toLowerCase();
-  // For video, -shortest keeps a reverb/echo tail from making the file longer than the picture.
-  if (VIDEO_EXT.has(ext)) return ["-map", "0:v?", "-map", "[out]", "-shortest", "-c:v", "copy", "-c:a", ext === ".webm" ? "libopus" : "aac", "-b:a", "256k"];
-  const map = ["-map", "[out]", "-vn"];
+  if (VIDEO_EXT.has(ext)) return ["-c:a", ext === ".webm" ? "libopus" : "aac", "-b:a", "256k"];
   switch (ext) {
     case ".wav":
-      return [...map, "-c:a", "pcm_s24le"];
+      return ["-c:a", "pcm_s24le"];
     case ".mp3":
-      return [...map, "-c:a", "libmp3lame", "-q:a", "2"];
+      return ["-c:a", "libmp3lame", "-q:a", "2"];
     case ".flac":
-      return [...map, "-c:a", "flac"];
+      return ["-c:a", "flac"];
     case ".ogg":
     case ".opus":
-      return [...map, "-c:a", "libopus", "-b:a", "192k"];
+      return ["-c:a", "libopus", "-b:a", "192k"];
     case ".m4a":
     case ".aac":
-      return [...map, "-c:a", "aac", "-b:a", "256k"];
+      return ["-c:a", "aac", "-b:a", "256k"];
     default:
       throw new Error(`Unsupported output format: "${ext}". Use wav, mp3, flac, ogg, m4a or a video (mp4, mov, mkv, webm).`);
   }
+}
+
+function codecArgs(output: string): string[] {
+  // For video, -shortest keeps a reverb/echo tail from making the file longer than the picture.
+  if (isVideoFile(output)) return ["-map", "0:v?", "-map", "[out]", "-shortest", "-c:v", "copy", ...audioCodecArgs(output)];
+  return ["-map", "[out]", "-vn", ...audioCodecArgs(output)];
 }
 
 /** Turns the -af graph into -filter_complex: labels the input [0:a] and the output [out]. */
@@ -152,8 +164,11 @@ export function syncPoints(x: Float32Array): SyncPoints {
   return { onset: first * 0.005, peak: peak * 0.005 };
 }
 
-export async function measureSync(input: string): Promise<SyncPoints> {
-  const { stdout } = await runFfmpeg(["-v", "error", "-t", String(SYNC_SCAN_SECONDS), "-i", input, "-vn", "-f", "f32le", "-ac", "2", "-ar", String(SAMPLE_RATE), "-"]);
+/** Measures the sync points of a file, or of the stretch that starts at `start` and lasts `length` seconds. */
+export async function measureSync(input: string, window: { start?: number; length?: number } = {}): Promise<SyncPoints> {
+  const seek = window.start ? ["-ss", String(window.start)] : [];
+  const scan = Math.min(SYNC_SCAN_SECONDS, window.length ?? SYNC_SCAN_SECONDS);
+  const { stdout } = await runFfmpeg(["-v", "error", ...seek, "-t", String(scan), "-i", input, "-vn", "-f", "f32le", "-ac", "2", "-ar", String(SAMPLE_RATE), "-"]);
   return syncPoints(new Float32Array(stdout.buffer, stdout.byteOffset, Math.floor(stdout.byteLength / 4)));
 }
 

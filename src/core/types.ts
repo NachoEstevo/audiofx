@@ -131,4 +131,9 @@ export interface CompileOptions {
   seed?: number;
   /** Adds aresample/aformat at the start to normalize to 48 kHz stereo. Defaults to true. */
   normalize?: boolean;
+  /**
+   * Prefix for every label and named filter instance (`bandpass@<prefix>...`) of the graph, so several
+   * compiled chains can live in one `-filter_complex` without colliding. Defaults to none.
+   */
+  labelPrefix?: string;
 }

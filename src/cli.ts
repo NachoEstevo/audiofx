@@ -3,18 +3,25 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import {
   CATEGORY_LABELS,
+  LIBRARY_REF,
   analyzeFile,
   applyToFile,
   catalog,
   compile,
+  detectCuts,
   getEffect,
   parseStep,
   prepareSteps,
+  renderMix,
   resolveFfmpeg,
   runFfmpeg,
   type Category,
   type EffectInfo,
   type EffectStep,
+  type MixClip,
+  type MixProject,
+  type MixTrack,
+  type TrackRole,
 } from "./core/index.js";
 import { catalogMarkdown } from "./catalog-markdown.js";
 import { findApiKey, generate, SETUP_HINT, type GenerateKind } from "./elevenlabs.js";
@@ -33,6 +40,10 @@ Usage:
   sfx sample add <file|url> [--title --id --source --kind]
                                                 Keeps a recorded sample in ~/.audiofx/samples to layer it
   sfx sample list [--json]                      Your samples and the library:<id> to use them
+  sfx mix <project.json> <output>               Mixes voice, music and effect tracks on a timeline
+  sfx mix <output> --voice v.wav --music m.wav [--sfx door.wav@6] [--video clip.mp4]
+                                                The same without a project file (--print shows its JSON)
+  sfx cuts <video> [--threshold 10] [--json]    Hard cuts in a video: where to land hits and whooshes
   sfx analyze <file> [--json]                   Loudness (LUFS), true peak, peak, RMS, duration
   sfx studio [--port 5177] [--no-open]          Opens the web studio to listen and tweak
   sfx catalog                                   Catalog as Markdown (for the skill)
@@ -59,6 +70,20 @@ sample add options (samples are licensed audio: they stay in ~/.audiofx/samples,
   --source <name>          epidemic-sound, elevenlabs, local (default) or any other name
   --kind <sfx|music|voice> Default sfx
 
+mix options (file@s places a clip at s seconds; library:<id> works wherever a file does):
+  --voice <file[@s]>       A voice clip (repeatable). The music ducks under the voices
+  --music <file[@s]>       A music clip (repeatable)
+  --sfx <file[@s]>         An effect clip whose attack lands on s (repeatable)
+  --video <file>           Keeps this video's picture when the output is a video
+  --duck <dB> | --no-duck  How far the music goes down while a voice plays (default 10)
+  --loudness <LUFS|off>    Master loudness target (default -14); a -1 dB ceiling always follows
+  --duration <s>           Project length (default: the video's, else the end of the last clip)
+  --print                  Prints the project JSON instead of rendering: save it, edit it, mix it
+  Project file: { "version": 1, "video", "duration", "tracks": [{ "id", "role": "voice|music|sfx",
+    "clips": [{ "file", "at", "start", "length", "gain", "fadeIn", "fadeOut", "align", "steps" }],
+    "steps", "gain", "mute", "solo", "duck": { "depth", "attack", "release", "threshold" } }],
+    "master": { "steps", "loudness", "ceiling" } }. Paths are relative to the project file.
+
 generate options (needs ELEVENLABS_API_KEY; generations are also kept in ~/.audiofx/generated):
   --duration <s>           sfx: 0.5–30 s (default: the model decides) · music: 3–600 s
   --loop                   sfx: seamless loop for ambiences and beds
@@ -70,32 +95,49 @@ generate options (needs ELEVENLABS_API_KEY; generations are also kept in ~/.audi
 If the output is a video (.mp4, .mov, .mkv, .webm), the picture is copied without re-encoding and the audio is replaced.
 `;
 
-const { values, positionals } = parseArgs({
-  allowPositionals: true,
-  options: {
-    json: { type: "boolean" },
-    category: { type: "string" },
-    chain: { type: "string" },
-    fade: { type: "string" },
-    mix: { type: "string" },
-    tail: { type: "string" },
-    seed: { type: "string" },
-    start: { type: "string" },
-    duration: { type: "string" },
-    loop: { type: "boolean" },
-    influence: { type: "string" },
-    voice: { type: "string" },
-    model: { type: "string" },
-    instrumental: { type: "boolean" },
-    title: { type: "string" },
-    id: { type: "string" },
-    source: { type: "string" },
-    kind: { type: "string" },
-    port: { type: "string" },
-    "no-open": { type: "boolean" },
-    help: { type: "boolean", short: "h" },
-  },
-});
+const OPTIONS = {
+  json: { type: "boolean" },
+  category: { type: "string" },
+  chain: { type: "string" },
+  fade: { type: "string" },
+  mix: { type: "string" },
+  tail: { type: "string" },
+  seed: { type: "string" },
+  start: { type: "string" },
+  duration: { type: "string" },
+  loop: { type: "boolean" },
+  influence: { type: "string" },
+  // generate: a voice id; mix: voice clips (repeatable).
+  voice: { type: "string", multiple: true },
+  music: { type: "string", multiple: true },
+  sfx: { type: "string", multiple: true },
+  video: { type: "string" },
+  duck: { type: "string" },
+  "no-duck": { type: "boolean" },
+  loudness: { type: "string" },
+  print: { type: "boolean" },
+  threshold: { type: "string" },
+  model: { type: "string" },
+  instrumental: { type: "boolean" },
+  title: { type: "string" },
+  id: { type: "string" },
+  source: { type: "string" },
+  kind: { type: "string" },
+  port: { type: "string" },
+  "no-open": { type: "boolean" },
+  help: { type: "boolean", short: "h" },
+} as const;
+
+// `--loudness -14`: parseArgs would take "-14" for an option, so a negative number is joined to its flag.
+const argv = process.argv.slice(2).reduce<string[]>((out, arg) => {
+  const flag = out[out.length - 1];
+  const name = flag?.startsWith("--") && !flag.includes("=") ? flag.slice(2) : "";
+  if (/^-\d/.test(arg) && OPTIONS[name as keyof typeof OPTIONS]?.type === "string") out[out.length - 1] = `${flag}=${arg}`;
+  else out.push(arg);
+  return out;
+}, []);
+
+const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS });
 
 const num = (v: string | undefined, name: string) => {
   if (v === undefined) return undefined;
@@ -139,6 +181,34 @@ async function report(output: string, started: number, extra: Record<string, unk
   if (values.json) return console.log(JSON.stringify(result, null, 2));
   console.log(`✔ ${output}  (${analysis.duration.toFixed(2)} s, ${analysis.integratedLufs ?? "?"} LUFS, peak ${analysis.peakDb?.toFixed(1) ?? "?"} dBFS, ${result.ms} ms)`);
   if ((analysis.peakDb ?? -99) > -0.1) console.log("⚠ The output reaches 0 dBFS: add `limiter` or `loudness` at the end of the chain.");
+}
+
+/** "door.wav@6" → a clip at 6 s. Paths become absolute so a printed project works from any folder. */
+function clipFlag(spec: string, extra: Partial<MixClip> = {}): MixClip {
+  const at = /^(.*)@(\d+(?:\.\d+)?)$/.exec(spec.trim());
+  const file = (at ? at[1] : spec).trim();
+  return { file: file.startsWith(LIBRARY_REF) ? file : path.resolve(file), ...(at ? { at: Number(at[2]) } : {}), ...extra };
+}
+
+/** The project the mix flags describe: one track per role. */
+function projectFromFlags(): MixProject {
+  const track = (role: TrackRole, specs: string[] | undefined, extra: Partial<MixTrack> = {}, clip: Partial<MixClip> = {}): MixTrack[] =>
+    specs?.length ? [{ id: role, role, clips: specs.map((s) => clipFlag(s, clip)), ...extra }] : [];
+  const depth = num(values.duck, "duck");
+  const duck = values["no-duck"] ? { duck: false } : depth !== undefined ? { duck: { depth } } : {};
+  const tracks = [
+    ...track("voice", values.voice),
+    ...track("music", values.music, duck),
+    // Like layer with align=onset: the sample's attack, not its leading silence, lands on the second.
+    ...track("sfx", values.sfx, {}, { align: "onset" }),
+  ];
+  if (!tracks.length) throw new Error("Give at least one clip: --voice, --music or --sfx (file or file@seconds), or a project file.");
+  const project: MixProject = { version: 1, tracks };
+  if (values.video) project.video = path.resolve(values.video);
+  const duration = num(values.duration, "duration");
+  if (duration !== undefined) project.duration = duration;
+  if (values.loudness !== undefined) project.master = { loudness: values.loudness === "off" ? null : num(values.loudness, "loudness") };
+  return project;
 }
 
 async function main() {
@@ -203,7 +273,7 @@ async function main() {
         duration: num(values.duration, "duration"),
         loop: values.loop,
         influence: num(values.influence, "influence"),
-        voice: values.voice,
+        voice: values.voice?.at(-1),
         model: values.model,
         instrumental: values.instrumental,
       });
@@ -236,6 +306,26 @@ async function main() {
       console.log(`✔ ${sample.title} → ${sample.file}`);
       console.log(`  ${sample.duration?.toFixed(2)} s, attack at ${sample.onset?.toFixed(3)} s, loudest at ${sample.peak?.toFixed(3)} s`);
       console.log(`  Use it: "layer:file=${sample.ref},at=<s>,align=onset"`);
+      return;
+    }
+    case "mix": {
+      const fromFile = args[0]?.toLowerCase().endsWith(".json");
+      const output = fromFile ? args[1] : args[0];
+      if (fromFile && (values.voice || values.music || values.sfx)) throw new Error("Give either a project file or --voice/--music/--sfx, not both.");
+      const project: MixProject = fromFile ? JSON.parse(readFileSync(args[0], "utf8")) : projectFromFlags();
+      if (values.print) return console.log(JSON.stringify(project, null, 2));
+      if (!output) throw new Error("Usage: sfx mix <project.json> <output>  ·  sfx mix <output> --voice v.wav --music m.wav [--sfx file@s] [--video clip.mp4]");
+      const t = Date.now();
+      const baseDir = fromFile ? path.dirname(path.resolve(args[0])) : process.cwd();
+      const render = await renderMix(project, output, { resolveLibrary: libraryResolver(), baseDir });
+      return report(output, t, { duration: render.duration, tracks: project.tracks.map((tr) => tr.id) });
+    }
+    case "cuts": {
+      if (!args[0]) throw new Error("Usage: sfx cuts <video> [--threshold 10]");
+      const cuts = await detectCuts(args[0], { threshold: num(values.threshold, "threshold") });
+      if (values.json) return console.log(JSON.stringify(cuts, null, 2));
+      if (!cuts.length) return console.log("No hard cuts found. A lower --threshold (default 10) catches softer ones.");
+      for (const cut of cuts) console.log(`${cut.time.toFixed(3)} s  (score ${cut.score.toFixed(1)})`);
       return;
     }
     case "analyze": {

@@ -28,7 +28,8 @@ function windowEnvelope(from: number | undefined, to: number | undefined, fade: 
 export function compile(steps: EffectStep[], options: CompileOptions = {}): CompiledGraph {
   if (!steps.length) throw new Error("The chain is empty: give at least one effect.");
   let counter = 0;
-  const label = (hint: string) => `${hint}${++counter}`;
+  const prefix = options.labelPrefix ?? "";
+  const label = (hint: string) => `${prefix}${hint}${++counter}`;
   const parts: string[] = [];
   const resolved: CompiledGraph["steps"] = [];
   const seed = options.seed ?? 1234;
