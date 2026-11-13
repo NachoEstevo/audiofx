@@ -5,7 +5,7 @@
 # AudioFX
 
 **Sound design for video, as plain ffmpeg filtergraphs.**
-Underwater, old radio, phone calls, trailer hits, risers, whooshes and 61 more effects,
+61 effects, from underwater, old radio and phone calls to trailer hits, risers and whooshes,
 built so coding agents (and people) can use them when they put a video together.
 
 </div>
