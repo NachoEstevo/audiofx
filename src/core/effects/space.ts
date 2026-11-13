@@ -3,6 +3,68 @@ import type { EffectDefinition, Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
 
+/** Speed of sound in air at 20 °C, m/s. */
+const SPEED_OF_SOUND = 343;
+/**
+ * rubberband applies a new pitch to the audio it already holds, so a change is heard early: 33–55 ms with
+ * window=short and 256-sample frames (measured; 54–116 ms with the default window). Pitch commands go out this late.
+ */
+const PITCH_LEAD = 0.042;
+/**
+ * Pitch automation resolution, at or below the smallest audible pitch step. Each command leaves a faint transient
+ * (measured on a gliding 1 kHz tone: energy above 5 kHz -62 dB with 10-cent steps, -56 dB with 2-cent steps).
+ */
+const PITCH_STEP_CENTS = 5;
+const MAX_PITCH_COMMANDS = 300;
+
+/** A source moving in a straight line at `v` m/s that is closest (`d` m) to the listener at `at` seconds. */
+interface PassBy {
+  at: number;
+  v: number;
+  d: number;
+}
+/** Position along the path (negative while approaching) and distance to the listener. */
+const along = (p: PassBy, t: number) => p.v * (t - p.at);
+const distanceAt = (p: PassBy, t: number) => Math.hypot(p.d, along(p, t));
+/** Doppler ratio c / (c − v·cosθ), where cosθ = −x/R is the share of the speed that points at the listener. */
+const dopplerRatio = (p: PassBy, t: number) => SPEED_OF_SOUND / (SPEED_OF_SOUND + (p.v * along(p, t)) / distanceAt(p, t));
+const cents = (ratio: number) => 1200 * Math.log2(ratio);
+/** Lowpass cutoff for air absorption: open at the closest point, closing with distance (exaggerated at air = 1). */
+const airCutoff = (p: PassBy, t: number, air: number) => Math.max(800, 20000 * Math.pow(p.d / distanceAt(p, t), 1.5 * air));
+
+/**
+ * asendcmd automation for the pass: rubberband pitch every PITCH_STEP_CENTS (sent PITCH_LEAD late) and the air
+ * lowpass every 3% of cutoff. Far from the pass both settle (x/R → ±1), so the commands cover 40 closest
+ * distances on each side of `at`. The curve is sampled 200 times per d/v (its time constant): 2 ms by default.
+ */
+function passByCommands(p: PassBy, pitchTarget: string, air: { target: string; amount: number } | null) {
+  const span = (40 * p.d) / p.v;
+  const dt = p.d / p.v / 200;
+  const t0 = Math.max(0, p.at - span);
+  const t1 = p.at + span;
+  const glide = Math.abs(cents(dopplerRatio(p, t0) / dopplerRatio(p, t1)));
+  const step = Math.max(PITCH_STEP_CENTS, glide / MAX_PITCH_COMMANDS);
+  const pitch: string[] = [];
+  const lowpass: string[] = [];
+  let lastCents = cents(dopplerRatio(p, 0));
+  let lastCutoff = air ? airCutoff(p, 0, air.amount) : 0;
+  for (let t = t0; t <= t1; t += dt) {
+    const r = dopplerRatio(p, t);
+    if (Math.abs(cents(r) - lastCents) >= step) {
+      pitch.push(`${n(t + PITCH_LEAD)} ${pitchTarget} pitch ${n(r, 6)}`);
+      lastCents = cents(r);
+    }
+    if (air) {
+      const f = airCutoff(p, t, air.amount);
+      if (Math.abs(Math.log(f / lastCutoff)) >= 0.03) {
+        lowpass.push(`${n(t)} ${air.target} f ${n(f, 0)}`);
+        lastCutoff = f;
+      }
+    }
+  }
+  return { pitch, lowpass };
+}
+
 /** Preset spaces: decay (s), high damping (Hz), pre-delay (ms). */
 export const SPACES = {
   bathroom: { decay: 0.9, damping: 9000, predelay: 4, lowcut: 300 },
@@ -105,6 +167,84 @@ export const spaceEffects: EffectDefinition[] = [
           lowcut: 200,
           mix: 0.2 + d * 0.6,
         }),
+      ].join(";");
+    },
+  },
+  {
+    id: "doppler",
+    name: "Pass-by (Doppler)",
+    category: "space",
+    description:
+      "A source passing the camera: pitch above normal while it approaches and below as it leaves (the physical Doppler curve), level peaking at the pass, a pan across the field and duller sound far away. Keeps the duration.",
+    whenToUse:
+      "A car, motorbike, train, plane or drone going past. Apply it to the isolated sound, usually a sample that then gets layered (a car sample rendered through doppler, then mixed in with layer), not to a whole mix: it bends the pitch of everything.",
+    tags: ["doppler", "pass-by", "fly-by", "car", "plane", "movement", "pitch", "pan"],
+    timed: true,
+    params: [
+      {
+        type: "number",
+        id: "at",
+        label: "Closest at",
+        min: 0,
+        max: 600,
+        default: 2,
+        unit: "s",
+        step: 0.01,
+        description: "Second when the source is closest to the camera. In the studio it comes from the moment marker.",
+      },
+      { type: "number", id: "speed", label: "Speed", min: 10, max: 600, default: 90, unit: "km/h", step: 5, description: "Faster = a bigger pitch drop (about 2.5 semitones at 90 km/h)." },
+      {
+        type: "number",
+        id: "distance",
+        label: "Closest distance",
+        min: 1,
+        max: 300,
+        default: 10,
+        unit: "m",
+        scale: "log",
+        description: "Closer = a more sudden pitch glide and a sharper level peak; farther = a slow, gentle pass.",
+      },
+      { type: "enum", id: "direction", label: "Direction", options: ["left-right", "right-left", "center"], default: "left-right", description: "center keeps the stereo image (a pass overhead or straight through)." },
+      { type: "number", id: "falloff", label: "Level falloff", min: 0, max: 1, default: 1, step: 0.01, description: "How much the level follows the distance: 1 = physical (-6 dB per doubling), 0 = constant level." },
+      { type: "number", id: "air", label: "Air", min: 0, max: 1, default: 0.5, step: 0.01, description: "Dulls the sound far away (air absorption, exaggerated at 1). 0 = off." },
+    ],
+    build: (p, ctx) => {
+      const pass: PassBy = { at: num(p, "at"), v: num(p, "speed") / 3.6, d: num(p, "distance") };
+      const rb = `rubberband@${ctx.label("dp")}`;
+      const lp = `lowpass@${ctx.label("dpa")}`;
+      const air = num(p, "air");
+      const cmds = passByCommands(pass, rb, air > 0 ? { target: lp, amount: air } : null);
+      // Level (1/R law, at most -40 dB) and pan, per sample: x along the path, R distance, x/R from -1 to 1.
+      const at = n(pass.at);
+      const x = `${n(pass.v)}*(t-${at})`;
+      const gain = `max(0.01,pow(${n(pass.d)}/hypot(${n(pass.d)},${x}),${n(num(p, "falloff"))}))`;
+      const side = p.direction === "right-left" ? "-1" : "1";
+      const angle = `(1+${side}*(${x})/hypot(${n(pass.d)},${x}))*PI/4`;
+      // Equal-power pan of the mono sum, scaled so the center (the pass) keeps the source level.
+      const level =
+        p.direction === "center"
+          ? `aeval='val(0)*${gain}|val(1)*${gain}':c=same`
+          : `aeval='(val(0)+val(1))*0.7071*${gain}*cos(${angle})|(val(0)+val(1))*0.7071*${gain}*sin(${angle})':c=same`;
+      const dry = ctx.label("dpd");
+      const wet = ctx.label("dpw");
+      const silent = ctx.label("dps");
+      const out = ctx.label("dpo");
+      return [
+        `[${ctx.input}]asplit=2[${dry}][${wet}]`,
+        chain(wet, out, [
+          // Short frames so asendcmd applies each command on time (5 ms at 48 kHz).
+          "asetnsamples=n=256",
+          ...(cmds.pitch.length ? [`asendcmd=c='${cmds.pitch.join(";")}'`] : []),
+          // consistency = rubberband's mode for pitch that changes while playing (quality jumps when crossing 1.0).
+          `${rb}=pitch=${n(dopplerRatio(pass, 0), 6)}:pitchq=consistency:window=short`,
+          "asetnsamples=n=256",
+          ...(cmds.lowpass.length ? [`asendcmd=c='${cmds.lowpass.join(";")}'`] : []),
+          ...(air > 0 ? [`${lp}=f=${n(airCutoff(pass, 0, air), 0)}`] : []),
+          level,
+        ]),
+        // rubberband flushes a few extra ms at the end: a silent copy of the input sets the exact length.
+        `[${dry}]volume=0[${silent}]`,
+        `[${silent}][${out}]amix=inputs=2:duration=first:normalize=0[${ctx.output}]`,
       ].join(";");
     },
   },

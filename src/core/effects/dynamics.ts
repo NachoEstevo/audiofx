@@ -1,8 +1,24 @@
 import { chain, n, slope } from "../graph.js";
-import type { EffectDefinition, Params } from "../types.js";
+import { SAMPLE_RATE, type EffectDefinition, type Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
 const lin = (db: number) => n(Math.pow(10, db / 20), 6);
+
+/** afftdn delays its output by 25 ms (measured at 48 and 44.1 kHz) and does not compensate it. */
+const AFFTDN_LATENCY = 0.025;
+
+/** afftdn noise profiles. Measured on a voice: `white` suits flat hiss, `vinyl` (more lows) room noise, `shellac` both. */
+const NOISE_PROFILES = { mixed: "shellac", hiss: "white", room: "vinyl" } as const;
+
+/**
+ * ffmpeg's `deesser` (Airwindows DeEss) replaces the signal by `lowpass + (signal - lowpass) / ratio` while it
+ * detects sibilance: a one-pole lowpass, run at half rate on alternating samples, with coefficient f²/overallscale.
+ * Inverting that gives the `f` whose corner (3 dB of cut when fully engaged, measured) sits at `hz`.
+ */
+function deesserFrequency(hz: number): number {
+  const overallscale = SAMPLE_RATE / 44100;
+  return Math.min(1, Math.sqrt((1 - Math.exp((-2 * Math.PI * hz) / (SAMPLE_RATE / 2))) * overallscale));
+}
 
 export const dynamicsEffects: EffectDefinition[] = [
   {
@@ -28,6 +44,69 @@ export const dynamicsEffects: EffectDefinition[] = [
         `acompressor=threshold=${n(-12 - c * 14)}dB:ratio=${n(2 + c * 4)}:attack=8:release=120:makeup=${n(2 + c * 6)}dB`,
       ]);
     },
+  },
+  {
+    id: "denoise",
+    name: "Denoise",
+    category: "dynamics",
+    description: "Lowers steady background noise (hiss, fan, room tone) under a voice with spectral noise reduction. Compensates its latency.",
+    whenToUse:
+      "Dialogue or voice-over recorded at home or on location with a constant hiss or room noise, before voice-clean and the music. It does not remove clicks, hum or reverb.",
+    tags: ["denoise", "noise", "noise reduction", "hiss", "room tone", "cleanup", "dialogue"],
+    params: [
+      { type: "number", id: "reduction", label: "Reduction", min: 1, max: 40, default: 12, unit: "dB", step: 1, description: "How far the noise goes down. Above ~20 dB the voice can turn watery." },
+      {
+        type: "number",
+        id: "floor",
+        label: "Noise floor",
+        min: -80,
+        max: -20,
+        default: -50,
+        unit: "dB",
+        description: "Level of the noise between phrases. Set it a few dB above that noise: lower removes less, higher starts to blur the voice.",
+      },
+      {
+        type: "enum",
+        id: "noise",
+        label: "Noise type",
+        options: Object.keys(NOISE_PROFILES),
+        default: "mixed",
+        description: "hiss = flat, high noise (preamp, tape); room = noise with more lows (fan, AC, traffic); mixed = some of both.",
+      },
+    ],
+    build: (p, ctx) =>
+      chain(ctx.input, ctx.output, [
+        // The pad pushes the last 25 ms out of afftdn; trimming the same 25 ms at the start puts the voice back in sync.
+        `apad=pad_dur=${n(AFFTDN_LATENCY)}`,
+        `afftdn=nr=${n(num(p, "reduction"))}:nf=${n(num(p, "floor"))}:nt=${NOISE_PROFILES[p.noise as keyof typeof NOISE_PROFILES]}`,
+        `atrim=start=${n(AFFTDN_LATENCY)}`,
+        "asetpts=PTS-STARTPTS",
+      ]),
+  },
+  {
+    id: "de-esser",
+    name: "De-esser",
+    category: "dynamics",
+    description: "Tames harsh 's' and 'sh' sounds: while a sibilant sounds, the highs above the chosen frequency go down.",
+    whenToUse:
+      "Voices with sharp esses (close mics, bright voices, generated voices), especially after a presence boost or compression. Its detector follows level: apply it to the voice at its final level.",
+    tags: ["de-esser", "sibilance", "esses", "harsh", "voice", "dialogue"],
+    params: [
+      { type: "number", id: "amount", label: "Amount", min: 0, max: 1, default: 0.6, step: 0.01, description: "How readily and how hard it acts. 0 = only very loud esses." },
+      {
+        type: "number",
+        id: "freq",
+        label: "Frequency",
+        min: 1000,
+        max: 8000,
+        default: 4000,
+        unit: "Hz",
+        scale: "log",
+        description: "Where it acts: about 3 dB of cut at this frequency during an 's', more above it. Lower = stronger, but duller esses.",
+      },
+    ],
+    build: (p, ctx) =>
+      chain(ctx.input, ctx.output, [`deesser=i=${n(0.5 + 0.4 * num(p, "amount"))}:m=0.5:f=${n(deesserFrequency(num(p, "freq")))}`]),
   },
   {
     id: "compressor",

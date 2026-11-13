@@ -7,7 +7,10 @@ let mixed: string;
 let burst: string;
 let sample: string;
 
-/** Effects that add their own noise or tones from second 0: muted to measure the signal latency. */
+/**
+ * Params that would hide the signal onset from the burst fixture, turned off to measure the signal latency:
+ * effects that add their own noise or tones from second 0, and level ramps that are the effect's point.
+ */
 const QUIET_SOURCES: Record<string, Record<string, number>> = {
   phonograph: { crackle: 0, noise: 0 },
   vinyl: { dust: 0, scratch: 0, rumble: 0 },
@@ -18,6 +21,9 @@ const QUIET_SOURCES: Record<string, Record<string, number>> = {
   "sub-drop": { level: -40 },
   braam: { level: -40 },
   layer: { level: -60 },
+  // Its distance falloff leaves the burst's start ~8 dB under its end, right at the 25% threshold (1 in 25 noise
+  // seeds failed). Onset with a fast pass is also checked in tools.test.ts.
+  doppler: { falloff: 0 },
 };
 
 /** Effects that cannot run on defaults alone: `layer` needs the sample to mix in. */
@@ -28,13 +34,15 @@ const required = (id: string) => REQUIRED[id]?.() ?? {};
 
 /**
  * Effects that should change nothing on a test signal with no background noise or stereo image:
- * the gate needs noise between phrases, stereo width is measured separately (it cancels in mono) and
- * the limiter's default is a safety ceiling that only catches overs (checked with a hot signal).
+ * the gate needs noise between phrases, stereo width is measured separately (it cancels in mono),
+ * the limiter's default is a safety ceiling that only catches overs (checked with a hot signal) and
+ * the de-esser only acts on sibilance (checked with high-band bursts in tools.test.ts).
  */
 const NOT_AUDIBLE_BY_DESIGN: Record<string, string> = {
   gate: "only acts on background noise",
   limiter: "checked with a signal that goes over the ceiling",
   "stereo-width": "checked by measuring the side",
+  "de-esser": "only acts on sibilance; checked with high-band bursts",
 };
 
 /** Residual (dB) between two mono-summed signals after level matching and finding the best alignment (±50 ms). */
