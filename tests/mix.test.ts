@@ -280,6 +280,16 @@ describe("master", () => {
   });
 });
 
+describe("master loudness on a wide dynamic range", () => {
+  it("lands on the target when a quiet bed carries one loud stretch", async () => {
+    // Measured gain, not single-pass loudnorm: that one drifts from the target and reshapes the dynamics.
+    const out = await render({ version: 1, tracks: [musicTrack({ gain: -30 }), voiceTrack(loudVoice)], master: { loudness: -14 } });
+    const analysis = await analyzeFile(out);
+    expect(Math.abs(analysis.integratedLufs! + 14)).toBeLessThan(0.3);
+    expect(analysis.peakDb!).toBeLessThan(-0.9);
+  });
+});
+
 describe("video", () => {
   it("copies the picture, replaces the audio with the mix and keeps the video's length", async () => {
     const project: MixProject = { version: 1, video, tracks: [{ id: "fx", role: "sfx", clips: [{ file: click, at: 1 }] }], master: { loudness: null } };

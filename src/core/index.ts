@@ -12,6 +12,7 @@ export {
   compileMix,
   projectDuration,
   validateMix,
+  type CompileMixOptions,
   type CompiledMix,
   type DuckOptions,
   type MixClip,

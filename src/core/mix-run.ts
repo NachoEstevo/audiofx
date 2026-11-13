@@ -3,7 +3,7 @@ import path from "node:path";
 import { LIBRARY_REF } from "./effects/layer.js";
 import { audioCodecArgs, isVideoFile, measureSync, runFfmpeg } from "./ffmpeg.js";
 import { probeMedia, type MediaInfo } from "./media.js";
-import { compileMix, validateMix, type CompiledMix, type MixClip, type MixProject } from "./mix.js";
+import { DEFAULT_LOUDNESS, compileMix, validateMix, type CompiledMix, type MixClip, type MixProject } from "./mix.js";
 import { prepareSteps, type PrepareOptions } from "./prepare.js";
 import { getEffect } from "./registry.js";
 import { SAMPLE_RATE, type EffectStep } from "./types.js";
@@ -107,6 +107,25 @@ export async function prepareMix(project: MixProject, options: PrepareMixOptions
   return { project: { ...project, video, tracks, master }, media };
 }
 
+/**
+ * The master gain that brings a prepared mix to its loudness target: renders it once without the loudness
+ * stage, measures the integrated loudness (EBU R128) and returns the difference. undefined when the project
+ * turns loudness off or the mix is too quiet or short to measure.
+ */
+async function loudnessGain(prepared: PreparedMix): Promise<number | undefined> {
+  const target = prepared.project.master?.loudness === undefined ? DEFAULT_LOUDNESS : prepared.project.master.loudness;
+  if (target === null) return undefined;
+  const flat = compileMix(prepared.project, prepared.media, { masterGain: 0 });
+  const { stderr } = await runFfmpeg([
+    "-v", "info", ...flat.inputs.flatMap((input) => ["-i", input]),
+    "-filter_complex", `${flat.filterComplex};[out]ebur128=framelog=quiet[measured]`, "-map", "[measured]", "-f", "null", "-",
+  ]);
+  const last = [...stderr.matchAll(/I:\s+(-?[\d.]+) LUFS/g)].pop();
+  const measured = last ? Number(last[1]) : NaN;
+  // ebur128 reports -70 for silence and for less than its 400 ms window: nothing to normalize.
+  return Number.isFinite(measured) && measured > -60 ? target - measured : 0;
+}
+
 /** A rendered mix: what was compiled and where it was written. */
 export interface MixRender extends CompiledMix {
   output: string;
@@ -115,13 +134,15 @@ export interface MixRender extends CompiledMix {
 /**
  * Prepares, compiles and renders a project. The output is an audio file (codec by extension), a video
  * (the project's `video` picture copied untouched, the mix as its audio, cut to the project duration), or
- * "buffer" for a 16-bit 48 kHz WAV in memory (the studio preview).
+ * "buffer" for a 16-bit 48 kHz WAV in memory (the studio preview). Loudness is normalized in two passes
+ * (measure, then a fixed gain before the ceiling), so the mix is rendered twice unless `master.loudness` is null.
  */
 export async function renderMix(project: MixProject, output: "buffer", options?: PrepareMixOptions): Promise<Buffer>;
 export async function renderMix(project: MixProject, output: string, options?: PrepareMixOptions): Promise<MixRender>;
 export async function renderMix(project: MixProject, output: string, options: PrepareMixOptions = {}): Promise<MixRender | Buffer> {
   const prepared = await prepareMix(project, options);
-  const compiled = compileMix(prepared.project, prepared.media);
+  // Two passes: the measured gain lands on the target where single-pass loudnorm does not.
+  const compiled = compileMix(prepared.project, prepared.media, { masterGain: await loudnessGain(prepared) });
   const args = ["-y", "-v", "error", ...compiled.inputs.flatMap((input) => ["-i", input])];
   if (output === "buffer") {
     const { stdout } = await runFfmpeg([

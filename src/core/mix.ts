@@ -268,8 +268,16 @@ function duckGraph(track: string, key: string, output: string, p: string, duck: 
   ].join(";");
 }
 
+export interface CompileMixOptions {
+  /**
+   * Replaces the master's loudness stage with this fixed gain in dB. renderMix measures the mix first and passes
+   * the gain that reaches the target: single-pass loudnorm falls several LU short on mixes with a wide dynamic range.
+   */
+  masterGain?: number;
+}
+
 /** Compiles a mix project into one filter_complex. `sources` holds every file's duration (prepareMix measures them). */
-export function compileMix(project: MixProject, sources: MixSources): CompiledMix {
+export function compileMix(project: MixProject, sources: MixSources, options: CompileMixOptions = {}): CompiledMix {
   validateMix(project);
   const duration = projectDuration(project, sources);
   const samples = Math.round(duration * SAMPLE_RATE);
@@ -358,7 +366,11 @@ export function compileMix(project: MixProject, sources: MixSources): CompiledMi
   const loudness = master.loudness === undefined ? DEFAULT_LOUDNESS : master.loudness;
   const steps: EffectStep[] = [...(master.steps ?? [])];
   // loudnorm's true-peak target follows the ceiling, so the limiter only catches what is left.
-  if (loudness !== null) steps.push({ effect: "loudness", params: { target: loudness, truePeak: Math.min(0, Math.max(-6, ceiling)) } });
+  if (options.masterGain !== undefined) {
+    if (options.masterGain !== 0) steps.push({ effect: "gain", params: { db: Math.min(24, Math.max(-48, options.masterGain)) } });
+  } else if (loudness !== null) {
+    steps.push({ effect: "loudness", params: { target: loudness, truePeak: Math.min(0, Math.max(-6, ceiling)) } });
+  }
   steps.push({ effect: "limiter", params: { ceiling } });
   parts.push(embed(steps, "mix", "master", { prefix: "m_", seed: seed(), tail: 0, where: "the master" }));
   parts.push(`[master]${fit}[out]`);
