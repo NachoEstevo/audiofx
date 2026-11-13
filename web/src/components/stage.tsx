@@ -73,11 +73,10 @@ export function Stage(props: {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">{props.sourcePicker}</div>
           <div key={props.listening} className="animate-rise mt-4">
-            <p className="text-xs text-muted-foreground">{player.track === "original" ? "Hearing the original" : "Hearing"}</p>
-            <h2 className="mt-0.5 truncate font-display text-[28px] leading-tight font-light tracking-[-0.03em] text-balance sm:text-[34px]">
+            <h2 className="truncate font-display text-[28px] leading-tight font-light tracking-[-0.03em] text-balance sm:text-[34px]">
               {player.track === "original" ? "No effects" : props.listening}
             </h2>
-            <p className="truncate text-[13px] text-muted-foreground">{props.listeningHint}</p>
+            {props.listeningHint && <p className="truncate text-[13px] text-muted-foreground">{props.listeningHint}</p>}
           </div>
 
           <div className="relative mt-7">
@@ -100,10 +99,7 @@ export function Stage(props: {
             />
             <MomentFlag t={props.moment} span={span} active={props.timed} />
           </div>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {props.timed ? "Tap the waveform to move the moment: the hit lands there." : "Tap the waveform to jump there."}
-            {render.status === "error" && <span className="ml-2 text-danger">{render.error}</span>}
-          </p>
+          {render.status === "error" && <p className="mt-1.5 text-xs text-danger">{render.error}</p>}
           {props.meter !== false && <OutputMeter player={player} onAddLimiter={props.onAddLimiter} />}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">

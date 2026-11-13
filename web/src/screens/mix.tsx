@@ -1,4 +1,4 @@
-import { AudioLines, Clapperboard, Crosshair, Info, LoaderCircle, Plus, Redo2, Search, Sparkles, Undo2, Upload, X, Zap } from "lucide-react";
+import { AudioLines, ChevronsRight, Clapperboard, Info, LoaderCircle, Plus, Redo2, Search, Sparkles, Undo2, Upload, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { SampleOption } from "@/components/chain";
 import { Inspector } from "@/components/mix/inspector";
@@ -938,7 +938,7 @@ function CutPopover(props: {
             <MenuRow key={m.kind} icon={<Zap strokeWidth={1.5} />} title={m.label} sub={m.hint} onClick={() => props.onMoment(m.kind)} />
           ))}
           <MenuRow icon={<Search strokeWidth={1.5} />} title="Sample…" sub="A sound effect from your library, by its attack" onClick={() => props.onView("samples")} />
-          <MenuRow icon={<Crosshair strokeWidth={1.5} />} title="Move the playhead here" onClick={props.onSeek} />
+          <MenuRow icon={<ChevronsRight strokeWidth={1.5} />} title="Move the playhead here" onClick={props.onSeek} />
         </>
       ) : (
         <>

@@ -15,7 +15,7 @@ export const initialMoment = (duration: number) => Math.round(Math.min(duration 
 
 /**
  * The audio a screen plays effects over: the library, the loaded source and how to switch it. Each screen
- * has its own (and its own player). On open it loads your first voice; otherwise the demo voice; if TTS is
+ * has its own (and its own player). On open it loads a song kept as a sample, else your first voice; otherwise the demo voice; if TTS is
  * unavailable, music.
  */
 export function useSource(
@@ -90,10 +90,13 @@ export function useSource(
     return data;
   }, []);
 
-  // On open: your first voice; otherwise the demo voice; if TTS is unavailable, music.
+  // On open: a song you keep as a sample (the largest file: the full track, not a stem cut); otherwise your first voice; otherwise the demo
+  // voice; if TTS is unavailable, music.
   useEffect(() => {
     void (async () => {
       const lib = await refreshLibrary().catch(() => null);
+      const song = lib?.items.filter((i) => i.sample && i.kind === "music").sort((a, b) => b.sizeMb - a.sizeMb)[0];
+      if (song && (await pickSource({ type: "library", id: song.id }, lib!.items))) return;
       const voice = lib?.items.find((i) => i.kind === "voice");
       if (voice && (await pickSource({ type: "library", id: voice.id }, lib!.items))) return;
       if (await pickSource({ type: "demo", kind: "voice" })) return;

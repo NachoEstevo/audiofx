@@ -238,7 +238,7 @@ export function SoundsScreen({ active }: ScreenProps) {
             player={player}
             color={selected?.color ?? lastChainColor ?? IDLE_COLOR}
             listening={selected?.name ?? (chain.length ? "Your chain" : "No effects")}
-            listeningHint={selected ? selected.hint : chain.length ? chainNames.join(" → ") : "Pick a sound to try it"}
+            listeningHint={selected ? selected.hint : chain.length ? chainNames.join(" → ") : ""}
             sourcePicker={
               <SourcePicker
                 current={source}

@@ -171,7 +171,6 @@ export function ReviewList(props: ListProps & { query: string; onQuery: (q: stri
         })}
         {!props.groups.length && <p className="px-3 py-8 text-center text-[13px] text-muted-foreground">Nothing matches.</p>}
       </div>
-      <p className="border-t border-border px-4 py-2.5 text-[11px] leading-snug text-muted-foreground">{UNLISTED.join(", ")} is not listed: it needs a sample file to play.</p>
     </aside>
   );
 }
@@ -217,7 +216,6 @@ export function ReviewPicker(props: ListProps & { onMove: (delta: number) => voi
         </Button>
       </div>
       {props.problem && <Problem text={props.problem} />}
-      <p className="text-[11px] text-muted-foreground">{UNLISTED.join(", ")} is not listed: it needs a sample file to play.</p>
     </div>
   );
 }

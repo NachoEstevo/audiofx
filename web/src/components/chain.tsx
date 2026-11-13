@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Crosshair, Power, RotateCcw, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Power, RotateCcw, X } from "lucide-react";
 import { getEffect } from "../../../src/core/registry";
 import type { EffectStep, ParamSpec, ParamValue } from "../../../src/core/types";
 import { CATEGORY_ICONS } from "@/icons";
@@ -231,7 +231,7 @@ export function ParamControl({
           <NumberField value={Number(value)} min={spec.min} max={spec.max} label={spec.label} onChange={onChange} />
           {spec.moment !== false && (
             <Button size="sm" variant="ghost" onClick={() => onChange(Math.round(moment * 100) / 100)}>
-              <Crosshair strokeWidth={1.5} /> {momentLabel}
+              {momentLabel}
             </Button>
           )}
         </span>

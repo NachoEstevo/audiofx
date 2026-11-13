@@ -1,4 +1,4 @@
-import { Crosshair, Plus, Search, X } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { CATEGORY_LABELS, type Category } from "../../../src/core/types";
@@ -203,11 +203,6 @@ function Tile(props: {
       {/* A sample is told apart by its name: give it two lines. */}
       <span className={cn("mt-2.5 text-[14px] leading-snug font-medium", sound.group === "samples" ? "line-clamp-2 pr-5" : "line-clamp-1")}>{sound.name}</span>
       <span className="mt-0.5 line-clamp-2 pr-7 text-xs leading-snug text-pretty text-muted-foreground lg:pr-0">{sound.hint}</span>
-      {sound.timed && (
-        <span className="absolute top-3 right-3 text-muted-foreground" title="Lands on the moment marked on the waveform">
-          <Crosshair className="size-3.5" strokeWidth={1.5} />
-        </span>
-      )}
       <kbd
         className={cn(
           "absolute top-2.5 right-8 grid size-5 place-items-center rounded-md bg-foreground font-mono text-[11px] text-white transition-[opacity,scale] duration-150",

@@ -1,4 +1,4 @@
-import { Check, Crosshair, RotateCcw, TriangleAlert } from "lucide-react";
+import { Check, RotateCcw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { compile } from "../../../src/core/compile";
 import { getEffect, resolveParams } from "../../../src/core/registry";
@@ -422,7 +422,6 @@ export function ReviewScreen({ active }: ScreenProps) {
                 <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
                   {effect.timed && (
                     <span className="inline-flex items-center gap-1.5">
-                      <Crosshair className="size-3.5 text-[var(--moment)]" strokeWidth={1.5} aria-hidden />
                       Lands on the moment marked on the waveform, now {formatTime(moment)}
                     </span>
                   )}
