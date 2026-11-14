@@ -1,7 +1,9 @@
 /** Just under full scale: only a real over is touched, a master sitting at -0.1 dB is not. */
 const CEILING = 0.98;
 const LOOKAHEAD_S = 0.005;
-const RELEASE_S = 0.08;
+/** The gain stays down this long after a peak: longer than a cycle of the lowest bass, or it would ride each one and distort. */
+const HOLD_S = 0.03;
+const RELEASE_S = 0.3;
 
 /**
  * A copy of a render that the speakers can play without clipping: a look-ahead peak limiter, the same gain on
@@ -26,9 +28,10 @@ export function safeForPlayback(ctx: BaseAudioContext, buffer: AudioBuffer): Aud
   }
   if (!over) return buffer;
 
-  // Lowest need over the next L samples, then its mean over the last L: a ramp that is already down when the
+  // Lowest need from H samples back to L samples ahead, then its mean over the last L: a ramp that is already down when the
   // peak arrives and never sits above what any sample needs.
   const L = Math.max(1, Math.round(LOOKAHEAD_S * buffer.sampleRate));
+  const H = Math.round(HOLD_S * buffer.sampleRate);
   const ahead = new Float32Array(length);
   const queue = new Int32Array(length);
   let head = 0;
@@ -40,7 +43,7 @@ export function safeForPlayback(ctx: BaseAudioContext, buffer: AudioBuffer): Aud
       while (tail > head && need[queue[tail - 1]] >= need[next]) tail--;
       queue[tail++] = next;
     }
-    while (queue[head] < i) head++;
+    while (queue[head] < i - H) head++;
     ahead[i] = need[queue[head]];
   }
   const release = 1 - Math.exp(-1 / (RELEASE_S * buffer.sampleRate));

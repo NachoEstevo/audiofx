@@ -54,7 +54,7 @@ const TOGGLE_FADE = 0.03;
 
 /**
  * A/B player: switches between original and processed while keeping the position.
- * With `matchLoudness` the processed track plays at the original's level, like the plugins'
+ * With `matchLoudness` both tracks play at the level of the quieter one, like the plugins'
  * "gain match", so you judge the character and not the volume.
  */
 export class Player {
@@ -200,7 +200,9 @@ export class Player {
 
   private applyGain() {
     const diff = this.levelDiffDb;
-    const db = this.matchLoudness && this.track === "processed" && diff !== null ? Math.max(-18, Math.min(18, -diff)) : 0;
+    // Matching never boosts, or a quiet render would be pushed into clipping: the louder of the two comes down.
+    const down = this.track === "processed" ? -(diff ?? 0) : (diff ?? 0);
+    const db = this.matchLoudness && diff !== null ? Math.max(-18, Math.min(0, down)) : 0;
     this.gain.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.015);
   }
 

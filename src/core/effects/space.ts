@@ -270,9 +270,10 @@ export const spaceEffects: EffectDefinition[] = [
         vibrato(0.4 + w * 0.8, 0.1 + w * 0.4),
         `chorus=0.8:0.9:45|70:0.35|0.3:0.25|0.4:2|1.6`,
         `aecho=0.9:0.7:35|80:0.3|0.2`,
-        `volume=${n(5 - d * 3)}dB`,
-        // The resonance and the make-up gain push a full-scale master a few dB over: hold it, or it crackles.
-        "alimiter=limit=0.891:attack=5:release=50:level=0:latency=1",
+        // Low enough that a full-scale master stays under full scale (the resonance and the echo add about
+        // 3 dB of peak): what is left is almost all bass, and a limiter working on bass distorts.
+        `volume=${n(1.5 - d * 3)}dB`,
+        "alimiter=limit=0.891:attack=20:release=300:level=0:latency=1:asc=1",
       ]);
     },
   },

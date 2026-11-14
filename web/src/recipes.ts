@@ -100,9 +100,10 @@ const MOMENTS: Omit<Sound, "group" | "timed">[] = [
   {
     id: "m-splash",
     name: "Dive underwater",
-    hint: "Whoosh, then underwater",
+    hint: "Everything goes under",
     color: "#2563EB",
-    steps: [{ effect: "whoosh", at: -0.2, params: { length: 0.6, direction: "center" } }, { effect: "underwater", window: [0, 6, 0.3] }],
+    // No window in the studio: it is a demo, the effect stays on until you hold A. Where it starts and ends is set in code.
+    steps: [{ effect: "underwater" }],
   },
 ];
 

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeSignal, render, rmsDb, seconds, tempDir } from "./helpers.js";
@@ -25,6 +25,21 @@ afterAll(() => tmp.cleanup());
 
 /** Second where the layered sample starts: the tone is quiet, so the first loud 5 ms block is the sample. */
 const landing = (x: Float32Array) => syncPoints(x).onset;
+
+describe("library excludes", () => {
+  it("hides the files whose path contains a text from library.json's exclude", () => {
+    const folder = path.join(tmp.dir, "no-folders");
+    mkdirSync(folder, { recursive: true });
+    mkdirSync(path.join(tmp.dir, "home"), { recursive: true });
+    copyFileSync(tone, path.join(folder, "keep me.wav"));
+    copyFileSync(tone, path.join(folder, "Client demo song.wav"));
+    const config = path.join(tmp.dir, "home", "library.json");
+    writeFileSync(config, JSON.stringify({ exclude: ["client DEMO"] }));
+    expect(scanLibrary().items.map((i) => i.name)).toEqual(["keep me"]);
+    writeFileSync(config, JSON.stringify({}));
+    expect(scanLibrary().items.map((i) => i.name).sort()).toEqual(["Client demo song", "keep me"]);
+  });
+});
 
 describe("layer", () => {
   it("lands the sample on `at`, leaves the rest untouched and keeps the duration", async () => {

@@ -7,10 +7,11 @@ import path from "node:path";
  * The studio's local library: voices, music and effects the user already has on disk, so effects can be
  * tried on real material. Only files from these folders are listed and served:
  *   1. AUDIOFX_LIBRARY (folders separated by ";" on Windows or ":" on Unix), otherwise
- *   2. ~/.audiofx/library.json → { "folders": ["C:/...", ...] }, otherwise
+ *   2. ~/.audiofx/library.json → { "folders": ["C:/...", ...], "exclude": ["text", ...] }, otherwise
  *   3. ~/Music and ~/Downloads.
  * ~/.audiofx/generated (ElevenLabs generations) and ~/.audiofx/samples (samples fetched from a sound
- * library, each with a .json next to it: id, title, stem, source) are always included.
+ * library, each with a .json next to it: id, title, stem, source) are always included. `exclude` hides the
+ * files of the configured folders whose path contains any of those texts (case does not matter).
  */
 
 export type LibraryKind = "voice" | "music" | "sfx" | "mix";
@@ -91,6 +92,17 @@ export function libraryFolders(): string[] {
   return [path.join(homedir(), "Music"), path.join(homedir(), "Downloads")];
 }
 
+/** Texts from library.json's `exclude`, lower-cased: a file from a folder is hidden when its path contains one. */
+export function libraryExcludes(): string[] {
+  if (!existsSync(CONFIG_FILE)) return [];
+  try {
+    const exclude = (JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as { exclude?: unknown }).exclude;
+    return Array.isArray(exclude) ? exclude.filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => x.trim().toLowerCase()) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Classification by name: good enough to sort the list; the user still sees the file name. */
 export function classify(file: string, bytes: number): LibraryKind {
   const name = path.basename(file).toLowerCase();
@@ -130,6 +142,7 @@ function shortFolder(root: string, dir: string): string {
 
 export function scanLibrary(): { items: LibraryItem[]; paths: Map<string, string>; folders: string[] } {
   const folders = libraryFolders();
+  const excludes = libraryExcludes();
   const found: (LibraryItem & { file: string })[] = [];
 
   type Origin = "generated" | "sample" | "folder";
@@ -157,6 +170,7 @@ export function scanLibrary(): { items: LibraryItem[]; paths: Map<string, string
         }
         // Generated sound effects can be tiny; files picked up from regular folders must be real audio.
         if (origin === "folder" && st.size < 60 * 1024) continue;
+        if (origin === "folder" && excludes.some((text) => full.toLowerCase().includes(text))) continue;
         const base = path.basename(entry.name, path.extname(entry.name));
         const meta = origin === "sample" ? sampleMeta(full) : null;
         found.push({

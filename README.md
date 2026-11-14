@@ -91,8 +91,10 @@ This installs two skills into `~/.claude/skills` and `~/.codex/skills`:
 The studio lists the audio in `~/Music` and `~/Downloads`. To use other folders, create `~/.audiofx/library.json`:
 
 ```json
-{ "folders": ["C:/Users/you/Videos/media", "D:/Projects/sounds"] }
+{ "folders": ["C:/Users/you/Videos/media", "D:/Projects/sounds"], "exclude": ["client-x", "old takes"] }
 ```
+
+`exclude` is optional: it hides the files whose path contains any of those texts.
 
 ### Samples
 
