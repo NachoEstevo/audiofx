@@ -1,8 +1,9 @@
 import { Upload } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { PILL_TRANSITION, useSlidingPill } from "@/components/ui/sliding-pill";
 import { cn } from "@/lib/utils";
 import type { Player } from "./player";
 import { hrefOf, useHashPath } from "./router";
@@ -206,45 +207,21 @@ export function Shell({ routes }: { routes: Route[] }) {
 
 /** Screen links as pills. One indicator slides and resizes to the current link, and the labels cross-fade their colour with it. */
 function NavPills({ routes, current }: { routes: Route[]; current: Route }) {
-  const links = useRef(new Map<string, HTMLAnchorElement>());
-  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-  // Measured, not animated, on the first paint: the pill should not fly in from the corner.
-  const [moving, setMoving] = useState(false);
-  useLayoutEffect(() => {
-    const place = () => {
-      const el = links.current.get(current.path);
-      if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
-    };
-    place();
-    const frame = requestAnimationFrame(() => setMoving(true));
-    window.addEventListener("resize", place);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("resize", place);
-    };
-  }, [current.path]);
+  const { itemRef, indicator } = useSlidingPill(current.path);
   return (
     <nav aria-label="Screens" className="no-scrollbar relative flex min-w-0 overflow-x-auto rounded-full bg-muted p-1">
-      {pill && (
-        <span
-          aria-hidden
-          className={cn("absolute top-1 bottom-1 left-0 rounded-full bg-card shadow-ring motion-reduce:transition-none", moving && "transition-[translate,width] duration-[380ms] ease-[var(--ease-out)]")}
-          style={{ translate: `${pill.left}px 0`, width: pill.width }}
-        />
-      )}
+      {indicator}
       {routes.map((route) => {
         const on = route === current;
         return (
           <a
             key={route.path}
-            ref={(el) => {
-              if (el) links.current.set(route.path, el);
-              else links.current.delete(route.path);
-            }}
+            ref={itemRef(route.path)}
             href={hrefOf(route.path)}
             aria-current={on ? "page" : undefined}
             className={cn(
-              "relative z-10 inline-flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] whitespace-nowrap outline-none transition-colors duration-[380ms] ease-[var(--ease-out)] focus-visible:shadow-[0_0_0_2px_var(--color-foreground)] sm:px-3.5",
+              "relative z-10 inline-flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] whitespace-nowrap outline-none focus-visible:shadow-[0_0_0_2px_var(--color-foreground)] sm:px-3.5",
+              PILL_TRANSITION,
               on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >

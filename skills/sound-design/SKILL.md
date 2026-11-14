@@ -206,7 +206,7 @@ These stems are of the original recording, not of the edit. `EditRecording` with
 | Voice on the other end of a landline call | `telephone` | default (`noise=0.15,drive=3`) |
 | Cellphone call, video call | `speaker` | `model=phone` |
 | Sound coming out of a device in the scene (laptop, TV, PA, earpiece) | `speaker` | `model=earpiece/phone/laptop/radio/tv/walkie/megaphone/pa` |
-| Vintage radio, newscast, music from a radio in the scene | `am-radio` | `drive=6,noise=0.4,drift=0.3` |
+| Vintage radio, newscast, music from a radio in the scene | `am-radio` | default (`drive=12,noise=0.52,drift=0.38`) |
 | Police, military, pilots, radio orders | `walkie-talkie` | `drive=12` |
 | A tube TV on, 70s archive | `old-tv` | `mains=50` (Europe, Argentina) or `60` (US) |
 | Loudspeaker announcement, protest | `speaker` | `model=megaphone,drive=14` |

@@ -1,9 +1,9 @@
 import { Plus, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { CATEGORY_LABELS, type Category } from "../../../src/core/types";
 import { GROUP_LABELS, SLOT_LABELS, SOUNDS, type Slot, type Slots, type Sound } from "../recipes";
 import { SamplePicker, type SampleOption } from "@/components/chain";
+import { PILL_TRANSITION, useSlidingPill } from "@/components/ui/sliding-pill";
 import { OrbSwatch, type SwatchMode } from "@/components/ui/orb-swatch";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,8 @@ export function SoundGrid(props: {
   const [category, setCategory] = useState<Category | "all">("all");
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
+  // The pill follows the tab; while a search shows every group, no tab is current and it fades out.
+  const pill = useSlidingPill(q ? null : group);
   const visible = [...SOUNDS, ...props.samples].filter(
     (s) =>
       (q ? true : s.group === group) &&
@@ -50,28 +52,23 @@ export function SoundGrid(props: {
     <section aria-label="Sounds">
       <div className="flex flex-wrap items-center gap-3">
         <div className="no-scrollbar relative flex max-w-full overflow-x-auto rounded-full bg-muted p-1" role="tablist">
+          {pill.indicator}
           {GROUPS.map((g) => (
             <button
               key={g}
+              ref={pill.itemRef(g)}
               role="tab"
               aria-selected={!q && group === g}
               onClick={() => {
-                // The pill slides between tabs with a View Transition (when the browser supports it).
-                const apply = () =>
-                  flushSync(() => {
-                    setGroup(g);
-                    setQuery("");
-                  });
-                const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-                if (document.startViewTransition && !reduce) document.startViewTransition(apply);
-                else apply();
+                setGroup(g);
+                setQuery("");
               }}
               className={cn(
-                "relative z-10 h-8 cursor-pointer rounded-full px-3 text-[13px] whitespace-nowrap transition-colors duration-200 sm:px-3.5",
+                "relative z-10 h-8 shrink-0 cursor-pointer rounded-full px-3 text-[13px] whitespace-nowrap sm:px-3.5",
+                PILL_TRANSITION,
                 !q && group === g ? "text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {!q && group === g && <span className="absolute inset-0 -z-10 rounded-full bg-card shadow-ring" style={{ viewTransitionName: "tab-pill" }} />}
               {GROUP_LABELS[g]}
             </button>
           ))}
