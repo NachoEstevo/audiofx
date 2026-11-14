@@ -1,4 +1,4 @@
-import { SPEAKERS, chain, drive, dropouts, n, noises, speaker, throughSpeaker, vibrato, withNoise, wobble, type NoiseMaker, type SpeakerModel } from "../graph.js";
+import { SPEAKERS, chain, drive, dropouts, n, noises, peakLimiter, speaker, throughSpeaker, vibrato, withNoise, wobble, type NoiseMaker, type SpeakerModel } from "../graph.js";
 import type { EffectDefinition, Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
@@ -41,9 +41,9 @@ export const eraEffects: EffectDefinition[] = [
       "Period newscasts, broadcasts in an old car, historic speeches, music playing 'inside' the scene (diegetic) from a radio.",
     tags: ["radio", "retro", "newscast", "vintage", "diegetic"],
     params: [
-      { type: "number", id: "drive", label: "Distortion", min: 0, max: 18, default: 6, unit: "dB", step: 0.5 },
-      amount("noise", "Static", 0.4),
-      amount("drift", "Tuning drift", 0.3, "Slight pitch instability of the station."),
+      { type: "number", id: "drive", label: "Distortion", min: 0, max: 18, default: 12, unit: "dB", step: 0.5 },
+      amount("noise", "Static", 0.52),
+      amount("drift", "Tuning drift", 0.38, "Slight pitch instability of the station."),
     ],
     build: (p, ctx) =>
       throughSpeaker(
@@ -93,28 +93,6 @@ export const eraEffects: EffectDefinition[] = [
       ),
   },
   {
-    id: "cellphone",
-    name: "Bad cell signal",
-    category: "era",
-    description: "Compressed cell call (narrowband codec) with dropouts, artifacts and a metallic voice.",
-    whenToUse: "Cell calls, video calls that freeze, someone talking from a place with no signal, tension in thrillers.",
-    tags: ["cellphone", "call", "signal", "dropouts", "glitch", "video call"],
-    params: [
-      amount("signal", "Bad signal", 0.5, "Higher = more dropouts and artifacts."),
-      { type: "number", id: "bits", label: "Codec quality", min: 4, max: 12, default: 7, step: 1, unit: "bits" },
-    ],
-    build: (p, ctx) => {
-      const s = num(p, "signal");
-      return throughSpeaker(
-        ctx,
-        "phone",
-        [MONO, "aresample=11025", `acrusher=bits=${n(num(p, "bits"))}:mode=log:aa=0.3:mix=1`, "aresample=48000"],
-        ["acompressor=threshold=-20dB:ratio=6:attack=2:release=60:makeup=8dB", dropouts(0.4 + s * 0.6, 1 + s * 3), vibrato(7.3, s * 0.08)],
-        [],
-      );
-    },
-  },
-  {
     id: "walkie-talkie",
     name: "Walkie-talkie",
     category: "era",
@@ -133,16 +111,6 @@ export const eraEffects: EffectDefinition[] = [
         [...drive(num(p, "drive"), "hard"), "acrusher=bits=9:mode=lin:mix=0.5", "volume=-4dB"],
         [...when(num(p, "noise") > 0, noises.static(num(p, "noise") * 1.4)), ...when(num(p, "noise") > 0, noises.hiss(num(p, "noise"), 600, 4000))],
       ),
-  },
-  {
-    id: "megaphone",
-    name: "Megaphone",
-    category: "era",
-    description: "Megaphone horn: horn resonances, aggressive saturation and a metallic bounce.",
-    whenToUse: "Protests, station announcements, a coach, a fairground loudspeaker or an alarm voice.",
-    tags: ["megaphone", "loudspeaker", "horn", "announcement", "protest"],
-    params: [{ type: "number", id: "drive", label: "Distortion", min: 0, max: 24, default: 14, unit: "dB", step: 0.5 }],
-    build: (p, ctx) => throughSpeaker(ctx, "megaphone", [MONO, ...drive(num(p, "drive"), "atan")], ["aecho=1:0.9:9|17:0.35|0.2"], []),
   },
   {
     id: "vinyl",
@@ -174,28 +142,6 @@ export const eraEffects: EffectDefinition[] = [
         ],
       );
     },
-  },
-  {
-    id: "phonograph",
-    name: "Gramophone",
-    category: "era",
-    description: "A 78 RPM shellac record through an acoustic horn: very narrow band, nasal resonance and dense crackle.",
-    whenToUse: "Recordings from 1900–1930, silent film, the distant past or an extreme archive look.",
-    tags: ["gramophone", "phonograph", "1920s", "archive", "vintage"],
-    params: [amount("crackle", "Crackle", 0.7), amount("noise", "Hiss", 0.5)],
-    build: (p, ctx) =>
-      throughSpeaker(
-        ctx,
-        "megaphone",
-        [MONO, "highpass=f=350", "lowpass=f=3800", vibrato(1.3, 0.25)],
-        [...drive(4), "volume=-1dB"],
-        [
-          ...when(num(p, "crackle") > 0, noises.dust(num(p, "crackle"), 2.4)),
-          ...when(num(p, "crackle") > 0, noises.pops(num(p, "crackle"))),
-          ...when(num(p, "crackle") > 0, noises.scratch(num(p, "crackle") * 0.8, 78)),
-          ...when(num(p, "noise") > 0, noises.hiss(num(p, "noise") * 1.5, 1000, 5000)),
-        ],
-      ),
   },
   {
     id: "cassette",
@@ -245,24 +191,7 @@ export const eraEffects: EffectDefinition[] = [
         `lowpass=f=${n(num(p, "tone"))}`,
         "bass=g=3:f=90",
         ...wobble(num(p, "wobble"), num(p, "wobble") * 0.5),
-      ]),
-  },
-  {
-    id: "8bit",
-    name: "8-bit",
-    category: "era",
-    description: "Extreme quantization and aliasing like an old console.",
-    whenToUse: "Retro video games, pixelated transitions, nerdy humor or glitch.",
-    tags: ["8bit", "video game", "chiptune", "pixel", "retro"],
-    params: [
-      { type: "number", id: "bits", label: "Bits", min: 2, max: 8, default: 4, step: 1 },
-      { type: "number", id: "downsample", label: "Downsample", min: 1, max: 32, default: 12, step: 1 },
-    ],
-    build: (p, ctx) =>
-      chain(ctx.input, ctx.output, [
-        `acrusher=bits=${n(num(p, "bits"))}:samples=${n(num(p, "downsample"))}:mode=lin:aa=0:mix=1`,
-        "highpass=f=120",
-        "volume=-3dB",
+        peakLimiter(),
       ]),
   },
 ];

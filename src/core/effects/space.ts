@@ -1,4 +1,4 @@
-import { DECAY_FOR_RT60, chain, convolutionReverb, n, slope, vibrato } from "../graph.js";
+import { DECAY_FOR_RT60, chain, chorus, convolutionReverb, delayMix, n, peakLimiter, slope, vibrato } from "../graph.js";
 import type { EffectDefinition, Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
@@ -119,9 +119,12 @@ export const spaceEffects: EffectDefinition[] = [
     ],
     build: (p, ctx) => {
       const count = Math.round(num(p, "repeats"));
-      const delays = Array.from({ length: count }, (_, i) => n(num(p, "time") * (i + 1)));
-      const decays = Array.from({ length: count }, (_, i) => n(Math.pow(num(p, "feedback"), i + 1) * num(p, "mix")));
-      return chain(ctx.input, ctx.output, [`aecho=1:1:${delays.join("|")}:${decays.join("|")}`]);
+      const mix = num(p, "mix");
+      if (mix === 0) return chain(ctx.input, ctx.output, []);
+      const feedback = num(p, "feedback");
+      const time = num(p, "time");
+      const taps = Array.from({ length: count }, (_, i) => ({ ms: time * (i + 1), gain: feedback ** (i + 1) * mix }));
+      return delayMix(ctx, 1, taps);
     },
   },
   {
@@ -136,7 +139,8 @@ export const spaceEffects: EffectDefinition[] = [
       { type: "number", id: "time", label: "Time", min: 50, max: 200, default: 110, unit: "ms" },
       { type: "number", id: "level", label: "Level", min: 0, max: 1, default: 0.45, step: 0.01 },
     ],
-    build: (p, ctx) => chain(ctx.input, ctx.output, [`aecho=1:1:${n(num(p, "time"))}:${n(num(p, "level"))}`]),
+    build: (p, ctx) =>
+      delayMix(ctx, 1, [{ ms: num(p, "time"), gain: num(p, "level") }]),
   },
   {
     id: "distance",
@@ -264,17 +268,22 @@ export const spaceEffects: EffectDefinition[] = [
       const d = num(p, "depth");
       const w = num(p, "wobble");
       const cutoff = 1100 * (1 - d) + 280 * d;
-      return chain(ctx.input, ctx.output, [
-        ...slope(`lowpass=f=${n(cutoff)}`, 36),
-        `equalizer=f=${n(cutoff * 0.6)}:t=q:w=2:g=4`,
-        vibrato(0.4 + w * 0.8, 0.1 + w * 0.4),
-        `chorus=0.8:0.9:45|70:0.35|0.3:0.25|0.4:2|1.6`,
-        `aecho=0.9:0.7:35|80:0.3|0.2`,
-        // Low enough that a full-scale master stays under full scale (the resonance and the echo add about
-        // 3 dB of peak): what is left is almost all bass, and a limiter working on bass distorts.
-        `volume=${n(1.5 - d * 3)}dB`,
-        "alimiter=limit=0.891:attack=20:release=300:level=0:latency=1:asc=1",
-      ]);
+      const moved = ctx.label("uw");
+      const doubled = ctx.label("uwd");
+      const echo = ctx.label("uwe");
+      return [
+        chain(ctx.input, moved, [
+          ...slope(`lowpass=f=${n(cutoff)}`, 36),
+          `equalizer=f=${n(cutoff * 0.6)}:t=q:w=2:g=4`,
+          vibrato(0.4 + w * 0.8, 0.6 * w),
+        ]),
+        chorus({ ...ctx, input: moved, output: doubled }, 0.72, [
+          { speed: 0.25, depth: 4 * w, gain: 0.315 },
+          { speed: 0.4, depth: 3.2 * w, gain: 0.27 },
+        ]),
+        delayMix({ ...ctx, input: doubled, output: echo }, 0.63, [{ ms: 35, gain: 0.21 }, { ms: 80, gain: 0.14 }]),
+        chain(echo, ctx.output, [`volume=${n(1.5 - d * 3)}dB`, peakLimiter()]),
+      ].join(";");
     },
   },
 ];

@@ -50,6 +50,20 @@ export function mixInto(a: string, b: string, out: string, weightB = 1): string 
   return `[${a}][${b}]amix=inputs=2:duration=first:normalize=0:weights=1 ${n(weightB)}[${out}]`;
 }
 
+/** Sum delay taps in floating point. FFmpeg's aecho hard-clips its output, even in a float graph. */
+export function delayMix(ctx: BuildContext, dryGain: number, taps: { ms: number; gain: number }[]): string {
+  const dry = ctx.label("ed");
+  const inputs = taps.map(() => ctx.label("ei"));
+  const outputs = taps.map(() => ctx.label("eo"));
+  const labels = (branches: string[]) => branches.map((label) => `[${label}]`).join("");
+  const weights = [dryGain, ...taps.map((tap) => tap.gain)].map((gain) => n(gain, 6)).join(" ");
+  return [
+    `[${ctx.input}]asplit=${inputs.length + 1}[${dry}]${labels(inputs)}`,
+    ...taps.map((tap, i) => chain(inputs[i], outputs[i], [`adelay=delays=${Math.floor(tap.ms * SAMPLE_RATE / 1000)}S:all=1`])),
+    `[${dry}]${labels(outputs)}amix=inputs=${inputs.length + 1}:duration=longest:normalize=0:weights=${weights}[${ctx.output}]`,
+  ].join(";");
+}
+
 /**
  * Gain of the convolved signal. With `irnorm=2` afir normalizes the IR by energy, so the reverb level
  * does not depend on its length; this factor leaves the pure reverb about 3 dB below the dry signal.
@@ -190,15 +204,64 @@ export function drive(db: number, type = "tanh"): string[] {
 /** dB to linear gain. */
 export const dbToGain = (db: number) => Math.pow(10, db / 20);
 
+/** A gain envelope evaluated against the sample clock, independent of frame boundaries. */
+export function sampleGain(expression: string): string {
+  return `aeval='val(ch)*(${expression.replaceAll(/\bt\b/g, "(n/s)")})':c=same`;
+}
+
+/** Lookahead with a slow release so the gain does not ride individual bass cycles. */
+export function peakLimiter(ceiling = -1): string {
+  return `alimiter=limit=${n(dbToGain(ceiling), 6)}:attack=20:release=300:level=0:latency=1:asc=1`;
+}
+
 /**
- * Vibrato as a modulated delay (a one-voice chorus with no dry signal).
- * ffmpeg 7.1's `vibrato` filter reads uninitialized memory and sometimes emits NaN or huge values,
- * which then poison the following IIR filters. `depth` = 1 means ±1 semitone.
+ * Sweep a fractional-sample delay. The rate override scales vibrato's 5 ms delay line
+ * without resampling. Prime the whole delay with silence before FFmpeg can read it.
  */
+function sweptDelay(speedHz: number, depthMs: number): string {
+  if (depthMs <= 0) return "anull";
+  const samples = depthMs * SAMPLE_RATE / 1000;
+  // FFmpeg rounds its 5 ms buffer plus half a sample to the nearest even integer.
+  const buffer = Math.max(SAMPLE_RATE / 200, 2 * Math.ceil((samples + 1) / 2));
+  const rate = buffer * 200;
+  const depth = samples / (buffer - 1);
+  // Remove the initial silence and the fixed part of the delay, preserving the sample count.
+  const fixedDelay = Math.floor(buffer - samples);
+  const trim = buffer + fixedDelay;
+  return [
+    `adelay=delays=${buffer}S:all=1`,
+    `apad=pad_len=${fixedDelay}`,
+    `asetrate=${rate}`,
+    `vibrato=f=${n(speedHz * rate / SAMPLE_RATE, 7)}:d=${n(depth, 8)}`,
+    `asetrate=${SAMPLE_RATE}`,
+    `atrim=start_sample=${trim}`,
+    `asetpts=PTS-${trim}/SR/TB`,
+  ].join(",");
+}
+
+/** Pitch movement implemented by sweeping a short delay. */
 export function vibrato(speedHz: number, depth: number): string {
   if (depth <= 0) return "anull";
-  const depthMs = Math.min(25, (depth * 9.47) / speedHz);
-  return `chorus=0:1:${n(depthMs + 0.5)}:1:${n(speedHz)}:${n(depthMs)}`;
+  return sweptDelay(speedHz, Math.min(25, (depth * 9.47) / speedHz));
+}
+
+/** A dry signal plus independently swept copies, with interpolated delays for click-free modulation. */
+export function chorus(
+  ctx: BuildContext,
+  dryGain: number,
+  taps: { speed: number; depth: number; gain: number }[],
+): string {
+  const dry = ctx.label("chd");
+  const active = taps.filter((tap) => tap.gain > 0);
+  if (!active.length) return chain(ctx.input, ctx.output, [`volume=${n(dryGain)}`]);
+  const inputs = active.map(() => ctx.label("chi"));
+  const outputs = active.map(() => ctx.label("cho"));
+  const weights = [dryGain, ...active.map((tap) => tap.gain)].map((gain) => n(gain)).join(" ");
+  return [
+    `[${ctx.input}]asplit=${inputs.length + 1}[${dry}]${inputs.map((label) => `[${label}]`).join("")}`,
+    ...active.map((tap, i) => chain(inputs[i], outputs[i], [sweptDelay(tap.speed, tap.depth)])),
+    `[${dry}]${outputs.map((label) => `[${label}]`).join("")}amix=inputs=${inputs.length + 1}:duration=first:normalize=0:weights=${weights}[${ctx.output}]`,
+  ].join(";");
 }
 
 /**
@@ -220,7 +283,7 @@ export function dropouts(depth: number, rate = 1): string {
   if (depth <= 0) return "anull";
   const r = (x: number) => n(x * rate);
   const p = `pow(max(0,sin(2*PI*${r(0.31)}*t+1)*sin(2*PI*${r(0.73)}*t)*sin(2*PI*${r(1.37)}*t+2)),3)`;
-  return `volume='1-${n(Math.min(1, depth))}*min(1,${p}*14)':eval=frame`;
+  return sampleGain(`1-${n(Math.min(1, depth))}*min(1,${p}*14)`);
 }
 
 /** Characteristic noises to add to a signal (all last as long as the signal when mixed with duration=first). */

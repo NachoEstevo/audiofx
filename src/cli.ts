@@ -400,7 +400,7 @@ async function main() {
       const ffmpeg = resolveFfmpeg();
       const { stdout } = await runFfmpeg(["-filters"]);
       const text = stdout.toString();
-      const needed = ["amovie", "afir", "rubberband", "asendcmd", "acrusher", "asoftclip", "afreqshift", "loudnorm", "chorus", "anoisesrc", "aevalsrc", "aeval", "afftdn", "deesser"];
+      const needed = ["amovie", "afir", "rubberband", "asendcmd", "acrusher", "asoftclip", "afreqshift", "loudnorm", "vibrato", "anoisesrc", "aevalsrc", "aeval", "afftdn", "deesser"];
       const missing = needed.filter((f) => !new RegExp(`\\s${f}\\s`).test(text));
       const version = (await runFfmpeg(["-version"])).stdout.toString().split("\n")[0];
       console.log(`ffmpeg: ${ffmpeg}\n${version}`);

@@ -1,4 +1,4 @@
-import { n } from "./graph.js";
+import { n, sampleGain } from "./graph.js";
 import { getEffect, resolveParams } from "./registry.js";
 import { SAMPLE_RATE, type BuildContext, type CompileOptions, type EffectStep } from "./types.js";
 
@@ -14,7 +14,7 @@ export interface CompiledGraph {
 
 const DEFAULT_TAIL = 3;
 
-/** 0–1 envelope for the [from, to] window with `fade`-second ramps. Evaluated per frame in `volume`. */
+/** 0–1 envelope for the [from, to] window with `fade`-second ramps. */
 function windowEnvelope(from: number | undefined, to: number | undefined, fade: number, mix: number): string {
   const f = Math.max(0.001, fade);
   const parts: string[] = [];
@@ -71,8 +71,8 @@ export function compile(steps: EffectStep[], options: CompileOptions = {}): Comp
       const env = windowEnvelope(step.from, step.to, step.fade ?? 0.25, mix);
       parts.push(`[${current}]asplit=2[${dry}][${wetIn}]`);
       parts.push(effect.build(params, ctx(wetIn, wetOut)));
-      parts.push(`[${wetOut}]volume='${env}':eval=frame[${wetGain}]`);
-      parts.push(`[${dry}]volume='1-(${env})':eval=frame[${dryGain}]`);
+      parts.push(`[${wetOut}]${sampleGain(env)}[${wetGain}]`);
+      parts.push(`[${dry}]${sampleGain(`1-(${env})`)}[${dryGain}]`);
       parts.push(`[${dryGain}][${wetGain}]amix=inputs=2:duration=first:normalize=0[${output}]`);
     }
     current = output;

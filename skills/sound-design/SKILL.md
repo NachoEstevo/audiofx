@@ -1,6 +1,6 @@
 ---
 name: sound-design
-description: Sound design for videos with the local AudioFX CLI (`sfx`). 65 effects as ffmpeg filtergraphs, including synthesized cinema moments anchored to a second (impact hit, riser, whoosh, sub drop, trailer braam, gap before the drop, cut with a reverb tail, reverb or echo throw, stutter, trailer voice, archival voice), recorded samples layered at an exact second (from the user's sound library such as Epidemic Sound, from ElevenLabs or from local files), mixing voice, music and effects on a timeline with the music ducked under the voice, music fitted to the video (a track cut to the video's length with its drop on the main cut, stems treated one by one) and treatments (AM radio, landline, cellphone, device speakers, walkie-talkie, old TV, vinyl, cassette, underwater, behind the wall, reverb from bathroom to cathedral, echo, far away, robot, monster, ghost, dream, flashback, post-explosion shell shock, slow motion, tape stop, filter sweeps, reverse swell, low/high pass, clean voice, LUFS normalization). Use it whenever you build, edit or mix the audio of a video (ffmpeg, Python with numpy, Remotion, launch cuts, reels, explainers), when a scene asks for something to sound "as if...", when a voice, song or effect needs treatment, when preparing a drop, a hit on a cut, a title or a sound transition, when picking or cutting music for a video, or when normalizing loudness for export, even if the request never mentions audio effects. Also for ElevenLabs voices, music or sound effects that need processing (see the elevenlabs-fx skill to generate them). También para pedidos en español: bajo el agua, radio, teléfono, golpe, riser, whoosh, braam, sample, efecto de sonido grabado, mezcla, ducking, música al largo del video, el drop en el corte, stems, LUFS.
+description: Sound design for videos with the local AudioFX CLI (`sfx`). 59 effects as ffmpeg filtergraphs, including synthesized cinema moments anchored to a second (impact hit, riser, whoosh, sub drop, trailer braam, gap before the drop, cut with a reverb tail, reverb or echo throw, stutter, trailer voice, archival voice), recorded samples layered at an exact second (from the user's sound library such as Epidemic Sound, from ElevenLabs or from local files), mixing voice, music and effects on a timeline with the music ducked under the voice, music fitted to the video (a track cut to the video's length with its drop on the main cut, stems treated one by one) and treatments (AM radio, landline, device speakers, walkie-talkie, old TV, vinyl, cassette, underwater, behind the wall, reverb from bathroom to cathedral, echo, far away, robot, monster, ghost, dream, flashback, post-explosion shell shock, slow motion, tape stop, filter sweeps, reverse swell, low/high pass, clean voice, LUFS normalization). Use it whenever you build, edit or mix the audio of a video (ffmpeg, Python with numpy, Remotion, launch cuts, reels, explainers), when a scene asks for something to sound "as if...", when a voice, song or effect needs treatment, when preparing a drop, a hit on a cut, a title or a sound transition, when picking or cutting music for a video, or when normalizing loudness for export, even if the request never mentions audio effects. Also for ElevenLabs voices, music or sound effects that need processing (see the elevenlabs-fx skill to generate them). También para pedidos en español: bajo el agua, radio, teléfono, golpe, riser, whoosh, braam, sample, efecto de sonido grabado, mezcla, ducking, música al largo del video, el drop en el corte, stems, LUFS.
 ---
 
 # Sound design with AudioFX
@@ -204,16 +204,15 @@ These stems are of the original recording, not of the edit. `EditRecording` with
 | Trailer voice-over | `trailer-voice` | `depth=-2` |
 | Archival interview | `archival` | `age=0.6` |
 | Voice on the other end of a landline call | `telephone` | default (`noise=0.15,drive=3`) |
-| Cellphone call, bad signal, video call | `cellphone` | `signal=0.5`; higher = more dropouts |
+| Cellphone call, video call | `speaker` | `model=phone` |
 | Sound coming out of a device in the scene (laptop, TV, PA, earpiece) | `speaker` | `model=earpiece/phone/laptop/radio/tv/walkie/megaphone/pa` |
 | Vintage radio, newscast, music from a radio in the scene | `am-radio` | `drive=6,noise=0.4,drift=0.3` |
 | Police, military, pilots, radio orders | `walkie-talkie` | `drive=12` |
 | A tube TV on, 70s archive | `old-tv` | `mains=50` (Europe, Argentina) or `60` (US) |
-| Loudspeaker announcement, protest | `megaphone` | default |
+| Loudspeaker announcement, protest | `speaker` | `model=megaphone,drive=14` |
 | Warm nostalgia, record | `vinyl` | `dust=0.5,scratch=0.3,wear=0.4`; `rpm=78` for something older |
-| 1900–1930 archive, silent film | `phonograph` | default |
 | 80s/90s home video, VHS, mixtape | `cassette` | `wobble=0.5,age=0.4`; `loss=0.6` for worn tape |
-| Lo-fi or degraded digital look | `lofi`, `8bit` | default |
+| Lo-fi or degraded digital look | `lofi` | `bits=4,downsample=12` for an old-console sound |
 | Underwater camera, fainting, being stunned | `underwater` | window with `--fade 0.4` |
 | Party behind the door, neighbors | `muffled` | `thickness=0.6` |
 | Someone shouting from far away, a siren blocks away | `distance` | `distance=0.6` |
@@ -230,9 +229,8 @@ These stems are of the original recording, not of the edit. `EditRecording` with
 | Ghostly entrance, inhale before a sound | `reverse-swell` | `decay=1.5` (adds time before) |
 | Robot, AI, system | `robot` | `freq=60` |
 | Creature, demon | `monster` | `semitones=-8` |
-| Talking pet, comedy | `chipmunk` | `semitones=8` |
+| Talking pet, comedy | `pitch` | `semitones=8` |
 | Ghost, voice from beyond | `ghost` | `mix=0.6` |
-| Alien, unknown transmission | `alien` | `shift=140` |
 | Narration or interview before mixing | `voice-clean` | default; almost always the first step for a voice |
 | Steady hiss, fan or room noise under dialogue | `denoise` | `reduction=12`; before `voice-clean` |
 | Harsh "s" sounds | `de-esser` | `amount=0.6,freq=4000`; after `voice-clean`, at the voice's final level |
@@ -262,6 +260,6 @@ sfx apply dialogue.wav dialogue-clean.wav denoise voice-clean de-esser
 - **Trimming with `-t`.** If you later load the file with a helper that trims with `-t` as an output option (for example `decode_audio(path, start, duration, FX)`), the tail is lost. Ask for a longer duration or apply the effect to the clip once it is placed.
 - **Sync.** The sound onset never shifts more than one frame at 24 fps, so you can place the result at the same instant as the original. The exceptions are the effects that change the duration: `slowmo`, `speedup`, `tape-stop`, `reverse`, `reverse-swell` and `stutter`. Those don't accept `@from-to`: trim the clip first (`--start`, `--duration`) and process it whole. `reverse-swell` adds `decay` seconds before the sound, so place it `decay` seconds earlier.
 - **Levels.** Most effects stay within a few dB of the source. Some change it on purpose: `distance` (about -10 LU), `muffled` (about -8 LU) and `tinnitus` lower it, `bandpass` loses whatever falls outside the band, and `monster` raises it slightly. Measure with `sfx analyze` before mixing. If the output reaches 0 dBFS, add `limiter` at the end: by default it is a -1 dB safety ceiling that does not raise the level (`limiter:drive=6` makes things louder and denser).
-- **Mastered sources.** Commercial music often peaks at -0.1 dBTP. Distortion, bit crushing and modulation (`lofi`, `8bit`, `vibrato`, `alien`) can push it over 0 dBTP: finish those chains with `limiter` or `loudness`.
+- **Mastered sources.** Commercial music often peaks at -0.1 dBTP. Distortion, bit crushing and modulation (`lofi`, `vibrato`) can push it over 0 dBTP: finish those chains with `limiter` or `loudness`.
 - **Reproducibility.** Noise, crackle and reverbs use a seed. With the same chain and the same `--seed`, the result is byte-identical. Change the seed if the same crackle repeats in two nearby clips.
 - **Don't invent effects.** If something is not in `sfx list`, say so and build it with ffmpeg filters by hand, or propose adding it to the catalog in `{{AUDIOFX_DIR}}/src/core/effects/`.

@@ -12,7 +12,6 @@ let sample: string;
  * effects that add their own noise or tones from second 0, and level ramps that are the effect's point.
  */
 const QUIET_SOURCES: Record<string, Record<string, number>> = {
-  phonograph: { crackle: 0, noise: 0 },
   vinyl: { dust: 0, scratch: 0, rumble: 0 },
   tinnitus: { level: 0 },
   hit: { level: -40 },

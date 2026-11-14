@@ -54,7 +54,7 @@ const MOMENTS: Omit<Sound, "group" | "timed">[] = [
     name: "Hit on the cut",
     hint: "Riser, gap and hit",
     color: "#F75001",
-    steps: [{ effect: "riser", at: 0, params: { length: 2.5 } }, { effect: "drop-gap", at: 0, params: { gap: 0.4 } }, { effect: "hit", at: 0 }],
+    steps: [{ effect: "riser", at: 0, params: { length: 2.5 } }, { effect: "drop-gap", at: 0, params: { gap: 0.4 } }, { effect: "hit", at: 0 }, { effect: "limiter" }],
   },
   {
     id: "m-reveal",
@@ -66,6 +66,7 @@ const MOMENTS: Omit<Sound, "group" | "timed">[] = [
       { effect: "drop-gap", at: 0, params: { gap: 0.6 } },
       { effect: "hit", at: 0, params: { size: 0.85 } },
       { effect: "sub-drop", at: 0 },
+      { effect: "limiter" },
     ],
   },
   {
@@ -73,7 +74,7 @@ const MOMENTS: Omit<Sound, "group" | "timed">[] = [
     name: "Trailer title",
     hint: "Braam and sub",
     color: "#B91C1C",
-    steps: [{ effect: "braam", at: 0 }, { effect: "sub-drop", at: 0, params: { length: 3.5 } }],
+    steps: [{ effect: "braam", at: 0 }, { effect: "sub-drop", at: 0, params: { length: 3.5 } }, { effect: "limiter" }],
   },
   {
     id: "m-explosion",
@@ -84,18 +85,19 @@ const MOMENTS: Omit<Sound, "group" | "timed">[] = [
       { effect: "hit", at: 0, params: { size: 1, tone: "dark" } },
       { effect: "sub-drop", at: 0 },
       { effect: "tinnitus", window: [0.05, 5, 1.5] },
+      { effect: "limiter" },
     ],
   },
-  { id: "m-whoosh", name: "Text fly-in", hint: "Side-to-side whoosh", color: "#1A73F2", steps: [{ effect: "whoosh", at: 0 }] },
+  { id: "m-whoosh", name: "Text fly-in", hint: "Side-to-side whoosh", color: "#1A73F2", steps: [{ effect: "whoosh", at: 0 }, { effect: "limiter" }] },
   {
     id: "m-ending",
     name: "Cut to black",
     hint: "Cut with tail and sub",
     color: "#111827",
-    steps: [{ effect: "stop-tail", at: 0 }, { effect: "sub-drop", at: 0, params: { level: -4 } }],
+    steps: [{ effect: "stop-tail", at: 0 }, { effect: "sub-drop", at: 0, params: { level: -4 } }, { effect: "limiter" }],
   },
   { id: "m-gap", name: "Silence before", hint: "Everything drops out and returns", color: "#64748B", steps: [{ effect: "drop-gap", at: 0, params: { gap: 0.6 } }] },
-  { id: "m-echo", name: "Echoed word", hint: "End of a line", color: "#0EA5E9", steps: [{ effect: "throw", at: 0, params: { kind: "echo" } }] },
+  { id: "m-echo", name: "Echoed word", hint: "End of a line", color: "#0EA5E9", steps: [{ effect: "throw", at: 0, params: { kind: "echo" } }, { effect: "limiter" }] },
   { id: "m-glitch", name: "Tech glitch", hint: "Stutter", color: "#7C3AED", steps: [{ effect: "stutter", at: 0 }] },
   {
     id: "m-splash",
@@ -112,7 +114,6 @@ const TREATMENTS: Omit<Sound, "group" | "timed">[] = [
   { id: "t-trailer", name: "Trailer voice", hint: "Deep and epic", color: "#F75001", steps: [{ effect: "trailer-voice" }] },
   { id: "t-archival", name: "Archival voice", hint: "80s interview", color: "#A16207", steps: [{ effect: "archival" }] },
   { id: "t-call", name: "Phone call", hint: "Landline", color: "#F59E0B", steps: [{ effect: "telephone" }] },
-  { id: "t-cell", name: "Cellphone", hint: "Signal breaking up", color: "#0EA5E9", steps: [{ effect: "cellphone" }] },
   { id: "t-underwater", name: "Underwater", hint: "Submerged", color: "#2563EB", steps: [{ effect: "underwater" }] },
   { id: "t-radio", name: "Vintage radio", hint: "AM transistor", color: "#B45309", steps: [{ effect: "am-radio" }] },
   { id: "t-flashback", name: "Flashback", hint: "Distant memory", color: "#A855F7", steps: [{ effect: "flashback" }] },
@@ -121,9 +122,9 @@ const TREATMENTS: Omit<Sound, "group" | "timed">[] = [
   {
     id: "t-stadium",
     name: "Stadium",
-    hint: "Megaphone and reverb",
+    hint: "PA and reverb",
     color: "#16A34A",
-    steps: [{ effect: "megaphone" }, { effect: "reverb", params: { space: "stadium", mix: 0.4 } }],
+    steps: [{ effect: "speaker", params: { model: "pa", drive: 6 } }, { effect: "reverb", params: { space: "stadium", mix: 0.4 } }, { effect: "limiter" }],
   },
   { id: "t-vinyl", name: "Vinyl", hint: "Dust and scratches", color: "#44403C", steps: [{ effect: "vinyl" }] },
   {

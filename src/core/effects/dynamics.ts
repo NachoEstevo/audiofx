@@ -1,4 +1,4 @@
-import { chain, n, slope } from "../graph.js";
+import { chain, n, peakLimiter, slope } from "../graph.js";
 import { SAMPLE_RATE, type EffectDefinition, type Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
@@ -141,7 +141,7 @@ export const dynamicsEffects: EffectDefinition[] = [
     build: (p, ctx) =>
       chain(ctx.input, ctx.output, [
         `volume=${n(num(p, "drive"))}dB`,
-        `alimiter=limit=${lin(num(p, "ceiling"))}:attack=5:release=50:level=0:latency=1`,
+        peakLimiter(num(p, "ceiling")),
       ]),
   },
   {

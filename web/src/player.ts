@@ -41,16 +41,8 @@ function samplePeak(buffer: AudioBuffer): { db: number; clipped: number } {
 
 import { safeForPlayback } from "./safety";
 
-/**
- * Easing from one render into the next while playing: the old one fades out, the new one comes up just
- * behind it. They barely overlap on purpose: two versions of the same audio a few milliseconds apart
- * (a chorus, a filter's delay) comb-filter while they sound together, and a long crossfade turns that into
- * a sweep.
- */
-const SWAP_OUT = 0.09;
-const SWAP_IN = { delay: 0.05, fade: 0.14 };
-/** Seconds to cross between original and processed: short, so the comparison stays immediate but does not click. */
-const TOGGLE_FADE = 0.03;
+/** Complementary ramps keep the level steady while replacing one preview with another. */
+const CROSSFADE = 0.03;
 
 /**
  * A/B player: switches between original and processed while keeping the position.
@@ -70,6 +62,7 @@ export class Player {
   /** Fade gain of the playing source: each source has its own, so two can cross over. */
   private fader?: GainNode;
   private startedAt = 0;
+  private fadeIn = 0;
   private offset = 0;
   track: Track = "processed";
   playing = false;
@@ -104,12 +97,16 @@ export class Player {
 
   /** Loads an already decoded buffer (e.g. from the render cache). */
   setBuffer(track: Track, buffer: AudioBuffer) {
+    const playable = safeForPlayback(this.ctx, buffer);
+    const level = activeRmsDb(buffer);
+    const peak = samplePeak(buffer);
+    const at = this.playing && track === this.track ? this.time : undefined;
     this.buffers[track] = buffer;
-    this.playable[track] = safeForPlayback(this.ctx, buffer);
-    this.levels[track] = activeRmsDb(buffer);
-    this.peaks[track] = samplePeak(buffer);
+    this.playable[track] = playable;
+    this.levels[track] = level;
+    this.peaks[track] = peak;
     this.applyGain();
-    if (this.playing && track === this.track) this.restart();
+    if (at !== undefined) this.restart(at);
     this.changed();
   }
 
@@ -135,12 +132,13 @@ export class Player {
   }
 
   dropProcessed() {
+    const at = this.playing && this.track === "processed" ? this.time : undefined;
     delete this.buffers.processed;
     delete this.playable.processed;
     delete this.levels.processed;
     delete this.peaks.processed;
     this.applyGain();
-    if (this.playing && this.track === "processed") this.restart();
+    if (at !== undefined) this.restart(at);
     this.changed();
   }
 
@@ -194,7 +192,7 @@ export class Player {
     const at = this.time;
     this.loop = on;
     this.offset = at;
-    if (this.playing) this.restart();
+    if (this.playing) this.restart(at);
     this.changed();
   }
 
@@ -207,7 +205,7 @@ export class Player {
   }
 
   /** Stops what is playing; with `fade` seconds it fades out first, so a new source can cross over it. */
-  private stop(fade = 0) {
+  private stop(fade = 0, now = this.ctx.currentTime) {
     const node = this.node;
     const out = this.fader;
     if (!node || !out) return;
@@ -215,9 +213,9 @@ export class Player {
     this.fader = undefined;
     node.onended = null;
     if (fade > 0) {
-      const now = this.ctx.currentTime;
+      const gain = this.fadeIn > 0 ? Math.max(0, Math.min(1, (now - this.startedAt) / this.fadeIn)) : 1;
       out.gain.cancelScheduledValues(now);
-      out.gain.setValueAtTime(out.gain.value, now);
+      out.gain.setValueAtTime(gain, now);
       out.gain.linearRampToValueAtTime(0, now + fade);
       node.stop(now + fade);
       node.onended = () => {
@@ -232,13 +230,13 @@ export class Player {
   }
 
   /** A new render or loop setting while playing: eases from what was sounding into the new one. */
-  private restart() {
-    const at = this.time;
-    this.stop(SWAP_OUT);
-    this.startAt(at, SWAP_IN.fade, SWAP_IN.delay);
+  private restart(at: number) {
+    const now = this.ctx.currentTime;
+    this.stop(CROSSFADE, now);
+    this.startAt(at, CROSSFADE, now);
   }
 
-  private startAt(at: number, fade = 0, delay = 0) {
+  private startAt(at: number, fade = 0, now = this.ctx.currentTime) {
     const buffer = this.playable[this.track] ?? this.playable.original;
     if (!buffer) return;
     const node = this.ctx.createBufferSource();
@@ -246,38 +244,42 @@ export class Player {
     node.loop = this.loop;
     const fader = this.ctx.createGain();
     if (fade > 0) {
-      fader.gain.setValueAtTime(0, this.ctx.currentTime);
-      fader.gain.setValueAtTime(0, this.ctx.currentTime + delay);
-      fader.gain.linearRampToValueAtTime(1, this.ctx.currentTime + delay + fade);
+      fader.gain.setValueAtTime(0, now);
+      fader.gain.linearRampToValueAtTime(1, now + fade);
     }
     node.connect(fader);
     fader.connect(this.gain);
     this.fader = fader;
     const offset = Math.min(at, Math.max(0, buffer.duration - 0.01));
-    node.start(0, offset);
+    node.start(now, offset);
     node.onended = () => {
       if (this.node !== node) return;
+      node.disconnect();
+      fader.disconnect();
+      this.node = undefined;
+      this.fader = undefined;
       this.playing = false;
       this.offset = 0;
       this.changed();
     };
     this.node = node;
     this.offset = offset;
-    this.startedAt = this.ctx.currentTime;
+    this.startedAt = now;
+    this.fadeIn = fade;
   }
 
   async play() {
     if (!this.buffer()) return;
     await this.ctx.resume();
     this.stop();
-    this.startAt(this.offset);
+    this.startAt(this.offset, 0.004);
     this.playing = true;
     this.changed();
   }
 
   pause() {
     this.offset = this.time;
-    this.stop();
+    this.stop(0.004);
     this.playing = false;
     this.changed();
   }
@@ -289,10 +291,7 @@ export class Player {
 
   seek(t: number) {
     this.offset = Math.max(0, t);
-    if (this.playing) {
-      this.stop();
-      this.startAt(this.offset);
-    }
+    if (this.playing) this.restart(this.offset);
     this.changed();
   }
 
@@ -302,10 +301,7 @@ export class Player {
     this.track = track;
     this.offset = at;
     this.applyGain();
-    if (this.playing) {
-      this.stop(TOGGLE_FADE);
-      this.startAt(at, TOGGLE_FADE);
-    }
+    if (this.playing) this.restart(at);
     this.changed();
   }
 }

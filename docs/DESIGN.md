@@ -39,13 +39,13 @@ The repo ships no audio. Reverb impulse responses are generated from exponential
 
 ## Gain staging
 
-`pnpm tsx scripts/audit-levels.ts [voice] [music]` renders every effect with its defaults and reports the loudness change and true peak. Effects aim to stay within a few dB of the source unless the level change is the point (distance, behind the wall, tinnitus). The default `limiter` is a -1 dB safety ceiling that does not raise the level.
+`pnpm tsx scripts/audit-levels.ts [voice] [music]` renders every effect with its defaults and reports the loudness change and true peak. Effects aim to stay within a few dB of the source unless the level change is the point (distance, behind the wall, tinnitus). The default `limiter` is a -1 dB sample peak ceiling that does not raise the level. `sfx apply` limits the output before encoding, with a -1 dBFS sample peak ceiling for WAV and FLAC and -3 dBFS for lossy audio and video to leave room for encoder overshoot. Mix applies the same lossy encoding ceiling after its master chain.
 
-The studio shows the level change against the original and the sample peak of every render. Effect renders are 32-bit float, so an over is still there to measure: the studio counts samples at or over full scale rather than using a peak threshold that would flag any master at -0.1 dB, and warns that an export would clip. What the speakers get is a copy held under full scale by a look-ahead limiter in the browser (`web/src/safety.ts`), so the preview does not crackle while the numbers stay those of the real render.
+The studio shows the level change against the original and the sample peak of every render. Effect renders are 32-bit float, so an over is still there to measure: the studio counts samples at or over full scale rather than using a peak threshold that would flag any master at -0.1 dB, and warns when the chain goes over full scale. What the speakers get is a copy held under full scale by a look-ahead limiter in the browser (`web/src/safety.ts`), so the preview does not crackle while the numbers stay those of the real render.
 
 ## Known ffmpeg quirk
 
-ffmpeg 7.1's `vibrato` filter outputs NaN or garbage in its first milliseconds and contaminates the following filters. AudioFX replaces it with a modulated delay (a single-voice `chorus` with no dry signal).
+ffmpeg 7.1's `vibrato` filter outputs NaN or garbage in its first milliseconds and contaminates the following filters. AudioFX fills the delay line with silence before any source samples reach the filter, then trims the startup padding. The same interpolated delay is used for chorus taps.
 
 ## Studio
 

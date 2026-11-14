@@ -1,4 +1,4 @@
-import { bandLimit, chain, convolutionReverb, drive, mixInto, n, noiseSource, noises, rampCommands, wobble, withNoise } from "../graph.js";
+import { bandLimit, chain, chorus, convolutionReverb, delayMix, drive, mixInto, n, noiseSource, noises, rampCommands, sampleGain, wobble, withNoise } from "../graph.js";
 import { SAMPLE_RATE, type BuildContext, type EffectDefinition, type NumberParam, type Params } from "../types.js";
 
 /**
@@ -55,7 +55,7 @@ const saw = (f: number, harmonics: number) =>
   Array.from({ length: harmonics }, (_, i) => `${n(1 / (i + 1), 4)}*sin(2*PI*${n(f * (i + 1), 3)}*t)`).join("+");
 
 /** Send envelope: 1 inside [a, b] with short ramps. */
-const gate = (a: number, b: number, fade = 0.02) => `volume='clip((t-${n(a)})/${n(fade)},0,1)*clip((${n(b)}-t)/${n(fade)},0,1)':eval=frame`;
+const gate = (a: number, b: number, fade = 0.02) => sampleGain(`clip((t-${n(a)})/${n(fade)},0,1)*clip((${n(b)}-t)/${n(fade)},0,1)`);
 
 const TONES = {
   dark: { body: 450, crackLow: 1200, crackHigh: 5000, damping: 2500 },
@@ -144,7 +144,7 @@ export const cinemaEffects: EffectDefinition[] = [
           color: "white",
           amplitude: 0.55,
           duration: L,
-          filters: [`asendcmd=c='${cmds.join(";")}'`, `${bp}=f=280:width_type=q:w=1.2`, `volume='pow(t/${n(L)},2.2)':eval=frame`],
+          filters: [`asendcmd=c='${cmds.join(";")}'`, `${bp}=f=280:width_type=q:w=1.2`, sampleGain(`pow(t/${n(L)},2.2)`), "aformat=channel_layouts=mono"],
         }),
         `aevalsrc='${n(0.09 * num(p, "tonal"), 4)}*pow(t/${n(L)},1.8)*(${shepard})':s=${SAMPLE_RATE}:c=stereo:d=${n(L)}[${tones}]`,
         sum([noise, tones], raw),
@@ -186,7 +186,7 @@ export const cinemaEffects: EffectDefinition[] = [
       return [
         `anoisesrc=r=${SAMPLE_RATE}:a=0.6:c=pink:d=${n(L)}:seed=${ctx.seed},asendcmd=c='${cmds.join(";")}',${bp}=f=380:width_type=q:w=0.9[${air}]`,
         `anoisesrc=r=${SAMPLE_RATE}:a=0.5:c=brown:d=${n(L)}:seed=${ctx.seed + 3},lowpass=f=320[${body}]`,
-        `[${air}][${body}]amix=inputs=2:normalize=0:weights=1 0.6,volume='${env}':eval=frame[${mono}]`,
+        `[${air}][${body}]amix=inputs=2:normalize=0:weights=1 0.6,${sampleGain(env)}[${mono}]`,
         `[${mono}]aeval='val(0)*cos(${pos}*PI/2)*1.41|val(0)*sin(${pos}*PI/2)*1.41':c=stereo[${panned}]`,
         convolutionReverb(ctx, panned, verb, { decay: 0.9, damping: 7000, predelayMs: 0, mix: 0.25, lowcut: 300 }),
         layer(ctx, verb, start, num(p, "level") + 6),
@@ -227,7 +227,7 @@ export const cinemaEffects: EffectDefinition[] = [
     params: [at(1), { type: "number", id: "length", label: "Length", min: 1.5, max: 8, default: 3.5, unit: "s", step: 0.1 }, level()],
     build: (p, ctx) => {
       const L = num(p, "length");
-      const [raw, verb] = ["bm", "bv"].map(ctx.label);
+      const [raw, doubled, verb] = ["bm", "bmc", "bv"].map(ctx.label);
       const lp = `lowpass@${ctx.label("blp")}`;
       const cmds = [
         ...rampCommands(lp, "f", { start: 0, duration: 0.3, from: 180, to: 2400, curve: "exponential", steps: 15 }),
@@ -236,9 +236,12 @@ export const cinemaEffects: EffectDefinition[] = [
       const voices = [43.65, 43.85, 65.41, 87.31].map((f) => `(${saw(f, 7)})`).join("+");
       const env = `min(1,t/0.09)*(0.35+0.65*exp(-t*2.5))*clip((${n(L)}-t)/0.9,0,1)`;
       return [
-        `aevalsrc='0.07*${env}*(${voices})':s=${SAMPLE_RATE}:c=stereo:d=${n(L)},asendcmd=c='${cmds.join(";")}',${lp}=f=180,${drive(9).join(",")},` +
-          `chorus=0.8:0.9:25|40:0.3|0.25:0.3|0.5:1.5|2[${raw}]`,
-        convolutionReverb(ctx, raw, verb, { decay: 3.2, damping: 3500, predelayMs: 20, mix: 0.5, lowcut: 120 }),
+        `aevalsrc='0.07*${env}*(${voices})':s=${SAMPLE_RATE}:c=stereo:d=${n(L)},asendcmd=c='${cmds.join(";")}',${lp}=f=180,${drive(9).join(",")}[${raw}]`,
+        chorus({ ...ctx, input: raw, output: doubled }, 0.72, [
+          { speed: 0.3, depth: 1.5, gain: 0.27 },
+          { speed: 0.5, depth: 2, gain: 0.225 },
+        ]),
+        convolutionReverb(ctx, doubled, verb, { decay: 3.2, damping: 3500, predelayMs: 20, mix: 0.5, lowcut: 120 }),
         layer(ctx, verb, num(p, "at"), num(p, "level") + 2),
       ].join(";");
     },
@@ -262,13 +265,23 @@ export const cinemaEffects: EffectDefinition[] = [
       const gap = num(p, "gap");
       const a = Math.max(0, back - gap);
       const lp = `lowpass@${ctx.label("glp")}`;
-      const cmds = [...rampCommands(lp, "f", { start: a, duration: back - a, from: 20000, to: 220, curve: "exponential", steps: 25 }), `${n(back + 0.001)} ${lp} f 20000`];
-      return chain(ctx.input, ctx.output, [
-        `asendcmd=c='${cmds.join(";")}'`,
-        `${lp}=f=20000`,
-        // Falls to silence in the first 35% of the gap and stays there until the hit: the "vacuum" that makes it land.
-        `volume='if(between(t,${n(a)},${n(back)}),1-${n(num(p, "depth"))}*min(1,pow((t-${n(a)})/${n(Math.max(0.01, (back - a) * 0.35))},1.5)),1)':eval=frame`,
-      ]);
+      if (back === 0) return chain(ctx.input, ctx.output, []);
+      const [dry, wet, closed, opened] = ["gd", "gw", "gc", "go"].map(ctx.label);
+      const cmds = rampCommands(lp, "f", { start: a, duration: back - a, from: 20000, to: 220, curve: "exponential", steps: 25 });
+      // Crossfade back to the dry signal over 8 ms instead of changing the filter's coefficients in one jump.
+      const close = `clip((t-${n(a)})/0.008,0,1)*clip((${n(back + 0.008)}-t)/0.008,0,1)`;
+      const gain = `1-${n(num(p, "depth"))}*pow(clip((t-${n(a)})/${n(Math.max(0.01, (back - a) * 0.35))},0,1),1.5)`;
+      return [
+        `[${ctx.input}]asplit=2[${dry}][${wet}]`,
+        chain(dry, opened, [sampleGain(`1-(${close})`)]),
+        chain(wet, closed, [
+          "asetnsamples=n=128:p=0",
+          `asendcmd=c='${cmds.join(";")}'`,
+          `${lp}=f=20000`,
+          sampleGain(`(${close})*(${gain})`),
+        ]),
+        mixInto(opened, closed, ctx.output),
+      ].join(";");
     },
   },
   {
@@ -288,18 +301,24 @@ export const cinemaEffects: EffectDefinition[] = [
     build: (p, ctx) => {
       const cut = num(p, "at");
       const [dry, send, cutDry, gated, wet, loud] = ["cd", "cs", "cc", "cg", "cw", "cl"].map(ctx.label);
+      const echo = ctx.label("ce");
       const tail =
         p.kind === "echo"
-          ? chain(gated, wet, [`aecho=0:1:${n(380)}|${n(760)}|${n(1140)}|${n(1520)}:0.65|0.45|0.3|0.18`, "lowpass=f=6000"])
+          ? [
+              delayMix({ ...ctx, input: gated, output: echo }, 0, [
+                { ms: 380, gain: 0.65 }, { ms: 760, gain: 0.45 }, { ms: 1140, gain: 0.3 }, { ms: 1520, gain: 0.18 },
+              ]),
+              chain(echo, wet, ["lowpass=f=6000"]),
+            ].join(";")
           : // The IR decays exponentially: it is stretched so the perceived tail lasts as long as asked.
             convolutionReverb(ctx, gated, wet, { decay: num(p, "decay") * 1.8, damping: 6000, predelayMs: 0, mix: 1, dry: 0, lowcut: 150 });
       return [
         `[${ctx.input}]asplit=2[${dry}][${send}]`,
-        chain(dry, cutDry, [`volume='clip((${n(cut)}-t)/0.015,0,1)':eval=frame`]),
-        chain(send, gated, [gate(Math.max(0, cut - 1.2), cut + 0.01, 0.35)]),
+        chain(dry, cutDry, [sampleGain(`clip((${n(cut)}-t)/0.015,0,1)`)]),
+        chain(send, gated, [gate(Math.max(0, cut - 1.2), cut + 0.04, 0.28)]),
         tail,
         // The tail is only heard from the cut on: before it, the dry signal is still playing.
-        chain(wet, loud, [`volume='clip((t-${n(cut - 0.03)})/0.03,0,1)*${p.kind === "echo" ? 1.6 : 3.2}':eval=frame`]),
+        chain(wet, loud, [sampleGain(`clip((t-${n(cut - 0.03)})/0.03,0,1)*${p.kind === "echo" ? 1.6 : 3.2}`)]),
         `[${cutDry}][${loud}]amix=inputs=2:duration=first:normalize=0[${ctx.output}]`,
       ].join(";");
     },
@@ -322,9 +341,15 @@ export const cinemaEffects: EffectDefinition[] = [
     build: (p, ctx) => {
       const a = num(p, "at");
       const [dry, send, gated, wet, loud] = ["td", "ts", "tg", "tw", "tl"].map(ctx.label);
+      const echo = ctx.label("te");
       const tail =
         p.kind === "echo"
-          ? chain(gated, wet, ["aecho=0:1:333|666|999|1332:0.6|0.42|0.28|0.16", "highpass=f=250", "lowpass=f=6500"])
+          ? [
+              delayMix({ ...ctx, input: gated, output: echo }, 0, [
+                { ms: 333, gain: 0.6 }, { ms: 666, gain: 0.42 }, { ms: 999, gain: 0.28 }, { ms: 1332, gain: 0.16 },
+              ]),
+              chain(echo, wet, ["highpass=f=250", "lowpass=f=6500"]),
+            ].join(";")
           : convolutionReverb(ctx, gated, wet, { decay: 3, damping: 6500, predelayMs: 25, mix: 1, dry: 0, lowcut: 250 });
       return [
         `[${ctx.input}]asplit=2[${dry}][${send}]`,
@@ -355,7 +380,10 @@ export const cinemaEffects: EffectDefinition[] = [
       const [pa, pb, pc, pre, mid, post] = ["sa", "sb", "sc", "spre", "smid", "spost"].map(ctx.label);
       return [
         `[${ctx.input}]asplit=3[${pa}][${pb}][${pc}]`,
-        chain(pa, pre, [`atrim=end=${n(a)}`]),
+        chain(pa, pre, [
+          `atrim=end=${n(a)}`,
+          ...(a > 0 ? [`afade=t=out:st=${n(Math.max(0, a - 0.004))}:d=${n(Math.min(0.004, a))}`] : []),
+        ]),
         chain(pb, mid, [
           `atrim=start=${n(a)}:end=${n(a + slice)}`,
           "asetpts=PTS-STARTPTS",
@@ -363,7 +391,7 @@ export const cinemaEffects: EffectDefinition[] = [
           `afade=t=out:st=${n(Math.max(0, slice - 0.006))}:d=0.006`,
           `aloop=loop=${Math.round(num(p, "repeats")) - 1}:size=${Math.round(slice * SAMPLE_RATE)}`,
         ]),
-        chain(pc, post, [`atrim=start=${n(a + slice)}`, "asetpts=PTS-STARTPTS"]),
+        chain(pc, post, [`atrim=start=${n(a + slice)}`, "asetpts=PTS-STARTPTS", "afade=t=in:d=0.004"]),
         `[${pre}][${mid}][${post}]concat=n=3:v=0:a=1[${ctx.output}]`,
       ].join(";");
     },

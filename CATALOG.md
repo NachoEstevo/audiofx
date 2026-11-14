@@ -2,7 +2,7 @@
 
 <!-- Generated with `pnpm catalog`. Do not edit by hand: the source is src/core/effects. -->
 
-65 effects. CLI step format: `effect:param=value,param=value@from-to`. Effects marked _at a moment_ are anchored with `at=<seconds>`.
+59 effects. CLI step format: `effect:param=value,param=value@from-to`. Effects marked _at a moment_ are anchored with `at=<seconds>`.
 
 ## Cinema & trailer
 
@@ -316,9 +316,9 @@ Transistor radio: small speaker, broadcast compression, saturation and crackling
 
 | Param | Default | Range |
 | --- | --- | --- |
-| `drive` Distortion | 6 | 0–18 dB |
-| `noise` Static | 0.4 | 0–1 |
-| `drift` Tuning drift | 0.3 | 0–1 |
+| `drive` Distortion | 12 | 0–18 dB |
+| `noise` Static | 0.52 | 0–1 |
+| `drift` Tuning drift | 0.38 | 0–1 |
 
 ### `old-tv` — Old TV
 
@@ -343,17 +343,6 @@ A real phone line: 8 kHz band, µ-law quantization and a resonant earpiece.
 | `noise` Line noise | 0.15 | 0–1 |
 | `drive` Saturation | 3 | 0–12 dB |
 
-### `cellphone` — Bad cell signal
-
-Compressed cell call (narrowband codec) with dropouts, artifacts and a metallic voice.
-
-**When:** Cell calls, video calls that freeze, someone talking from a place with no signal, tension in thrillers.
-
-| Param | Default | Range |
-| --- | --- | --- |
-| `signal` Bad signal | 0.5 | 0–1 |
-| `bits` Codec quality | 7 | 4–12 bits |
-
 ### `walkie-talkie` — Walkie-talkie
 
 Handheld radio: very narrow band, hard clipping, extreme compression and static.
@@ -364,16 +353,6 @@ Handheld radio: very narrow band, hard clipping, extreme compression and static.
 | --- | --- | --- |
 | `drive` Distortion | 14 | 0–24 dB |
 | `noise` Static | 0.5 | 0–1 |
-
-### `megaphone` — Megaphone
-
-Megaphone horn: horn resonances, aggressive saturation and a metallic bounce.
-
-**When:** Protests, station announcements, a coach, a fairground loudspeaker or an alarm voice.
-
-| Param | Default | Range |
-| --- | --- | --- |
-| `drive` Distortion | 14 | 0–24 dB |
 
 ### `vinyl` — Vinyl
 
@@ -389,17 +368,6 @@ A vinyl record like iZotope Vinyl: dust, a scratch that repeats every turn, wear
 | `wear` Wear | 0.4 | 0–1 |
 | `warp` Warp | 0.3 | 0–1 |
 | `rumble` Rumble | 0.3 | 0–1 |
-
-### `phonograph` — Gramophone
-
-A 78 RPM shellac record through an acoustic horn: very narrow band, nasal resonance and dense crackle.
-
-**When:** Recordings from 1900–1930, silent film, the distant past or an extreme archive look.
-
-| Param | Default | Range |
-| --- | --- | --- |
-| `crackle` Crackle | 0.7 | 0–1 |
-| `noise` Hiss | 0.5 | 0–1 |
 
 ### `cassette` — Cassette
 
@@ -427,17 +395,6 @@ Bit and sample-rate reduction with gentle filtering and some wobble.
 | `downsample` Downsample | 5 | 1–16 |
 | `tone` Tone | 4500 | 1500–16000 Hz |
 | `wobble` Wobble | 0.3 | 0–1 |
-
-### `8bit` — 8-bit
-
-Extreme quantization and aliasing like an old console.
-
-**When:** Retro video games, pixelated transitions, nerdy humor or glitch.
-
-| Param | Default | Range |
-| --- | --- | --- |
-| `bits` Bits | 4 | 2–8 |
-| `downsample` Downsample | 12 | 1–32 |
 
 ## Modulation
 
@@ -531,16 +488,6 @@ A deep, saturated voice with body.
 | --- | --- | --- |
 | `semitones` Semitones | -8 | -18–-3 st |
 
-### `chipmunk` — Chipmunk
-
-A high voice with a sped-up timbre, without changing the duration.
-
-**When:** Humor, talking pets, cartoon voices.
-
-| Param | Default | Range |
-| --- | --- | --- |
-| `semitones` Semitones | 8 | 3–15 st |
-
 ### `ghost` — Ghost _(adds tail)_
 
 An ethereal voice: lower, widened, with a long reverb and no body.
@@ -550,16 +497,6 @@ An ethereal voice: lower, widened, with a long reverb and no body.
 | Param | Default | Range |
 | --- | --- | --- |
 | `mix` Amount | 0.6 | 0–1 |
-
-### `alien` — Alien
-
-Inharmonic frequency shift with modulation: a non-human voice.
-
-**When:** Aliens, unknown transmissions, sci-fi creatures.
-
-| Param | Default | Range |
-| --- | --- | --- |
-| `shift` Shift | 140 | -400–400 Hz |
 
 ## Narrative
 

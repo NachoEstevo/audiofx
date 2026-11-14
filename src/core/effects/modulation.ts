@@ -1,4 +1,4 @@
-import { chain, convolutionReverb, n, vibrato } from "../graph.js";
+import { chain, chorus, convolutionReverb, delayMix, n, peakLimiter, vibrato } from "../graph.js";
 import type { EffectDefinition, Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
@@ -19,9 +19,15 @@ export const modulationEffects: EffectDefinition[] = [
     build: (p, ctx) => {
       const d = num(p, "depth");
       const m = num(p, "mix");
-      return chain(ctx.input, ctx.output, [
-        `chorus=${n(1 - m * 0.3)}:0.9:25|40|55:${n(m * 0.5)}|${n(m * 0.4)}|${n(m * 0.35)}:0.3|0.45|0.6:${n(1 + d * 2)}|${n(1.5 + d * 2)}|${n(1 + d * 3)}`,
-      ]);
+      const doubled = ctx.label("chod");
+      return [
+        chorus({ ...ctx, output: doubled }, 1 - m * 0.37, [
+          { speed: 0.3, depth: 1 + d * 2, gain: m * 0.45 },
+          { speed: 0.45, depth: 1.5 + d * 2, gain: m * 0.36 },
+          { speed: 0.6, depth: 1 + d * 3, gain: m * 0.315 },
+        ]),
+        chain(doubled, ctx.output, m > 0 ? [peakLimiter()] : []),
+      ].join(";");
     },
   },
   {
@@ -52,8 +58,13 @@ export const modulationEffects: EffectDefinition[] = [
       { type: "number", id: "speed", label: "Speed", min: 0.1, max: 2, default: 0.5, step: 0.05, unit: "Hz" },
       { type: "number", id: "decay", label: "Intensity", min: 0, max: 0.99, default: 0.6, step: 0.01 },
     ],
-    build: (p, ctx) =>
-      chain(ctx.input, ctx.output, [`aphaser=in_gain=0.6:out_gain=0.9:delay=3:decay=${n(num(p, "decay"))}:speed=${n(num(p, "speed"))}:type=t`]),
+    build: (p, ctx) => {
+      const decay = num(p, "decay");
+      const gain = Math.min(0.9, (1 - decay) / 0.6);
+      return chain(ctx.input, ctx.output, [
+        `aphaser=in_gain=0.6:out_gain=${n(gain, 6)}:delay=3:decay=${n(decay)}:speed=${n(num(p, "speed"))}:type=t`,
+      ]);
+    },
   },
   {
     id: "tremolo",
@@ -111,12 +122,13 @@ export const modulationEffects: EffectDefinition[] = [
     build: (p, ctx) => {
       const m = num(p, "mix");
       const w = `2*PI*${n(num(p, "freq"))}*t`;
-      return chain(ctx.input, ctx.output, [
-        `aeval=val(ch)*(${n(1 - m)}+${n(m)}*sin(${w})):c=same`,
-        "aecho=1:1:6|11:0.4|0.3",
-        "acrusher=bits=12:mode=lin:mix=0.5",
-        "volume=3dB",
-      ]);
+      const modulated = ctx.label("rmod");
+      const echo = ctx.label("re");
+      return [
+        chain(ctx.input, modulated, [`aeval=val(ch)*(${n(1 - m)}+${n(m)}*sin(${w})):c=same`]),
+        delayMix({ ...ctx, input: modulated, output: echo }, 1, [{ ms: 6, gain: 0.4 }, { ms: 11, gain: 0.3 }]),
+        chain(echo, ctx.output, ["acrusher=bits=12:mode=lin:mix=0.5", "volume=3dB", peakLimiter()]),
+      ].join(";");
     },
   },
   {
@@ -127,25 +139,20 @@ export const modulationEffects: EffectDefinition[] = [
     whenToUse: "Creatures, demons, a threatening character, horror comedy.",
     tags: ["monster", "demon", "deep", "horror"],
     params: [{ type: "number", id: "semitones", label: "Semitones", min: -18, max: -3, default: -8, step: 0.5, unit: "st" }],
-    build: (p, ctx) =>
-      chain(ctx.input, ctx.output, [
-        `rubberband=pitch=${n(pitchRatio(num(p, "semitones")), 6)}:formant=shifted`,
-        "bass=g=6:f=110",
-        "volume=2dB",
-        "asoftclip=type=tanh",
-        "aecho=1:1:12|25:0.3|0.2",
-      ]),
-  },
-  {
-    id: "chipmunk",
-    name: "Chipmunk",
-    category: "character",
-    description: "A high voice with a sped-up timbre, without changing the duration.",
-    whenToUse: "Humor, talking pets, cartoon voices.",
-    tags: ["chipmunk", "high", "humor", "cartoon"],
-    params: [{ type: "number", id: "semitones", label: "Semitones", min: 3, max: 15, default: 8, step: 0.5, unit: "st" }],
-    build: (p, ctx) =>
-      chain(ctx.input, ctx.output, [`rubberband=pitch=${n(pitchRatio(num(p, "semitones")), 6)}:formant=shifted`, "highpass=f=150"]),
+    build: (p, ctx) => {
+      const saturated = ctx.label("ms");
+      const echo = ctx.label("me");
+      return [
+        chain(ctx.input, saturated, [
+          `rubberband=pitch=${n(pitchRatio(num(p, "semitones")), 6)}:formant=shifted`,
+          "bass=g=6:f=110",
+          "volume=2dB",
+          "asoftclip=type=tanh",
+        ]),
+        delayMix({ ...ctx, input: saturated, output: echo }, 1, [{ ms: 12, gain: 0.3 }, { ms: 25, gain: 0.2 }]),
+        chain(echo, ctx.output, [peakLimiter()]),
+      ].join(";");
+    },
   },
   {
     id: "ghost",
@@ -158,32 +165,24 @@ export const modulationEffects: EffectDefinition[] = [
     params: [{ type: "number", id: "mix", label: "Amount", min: 0, max: 1, default: 0.6, step: 0.01 }],
     build: (p, ctx) => {
       const mid = ctx.label("gh");
+      const doubled = ctx.label("ghc");
+      const widened = ctx.label("ghw");
       return [
         chain(ctx.input, mid, [
           "rubberband=pitch=0.89:formant=preserved",
           "highpass=f=250",
-          "chorus=0.7:0.9:30|50|70:0.4|0.35|0.3:0.2|0.3|0.4:2|2.5|3",
+        ]),
+        chorus({ ...ctx, input: mid, output: doubled }, 0.63, [
+          { speed: 0.2, depth: 2, gain: 0.36 },
+          { speed: 0.3, depth: 2.5, gain: 0.315 },
+          { speed: 0.4, depth: 3, gain: 0.27 },
+        ]),
+        chain(doubled, widened, [
           "flanger=delay=2:depth=3:regen=20:speed=0.2",
           "volume=5dB",
         ]),
-        convolutionReverb(ctx, mid, ctx.output, { decay: 4.5, damping: 4000, predelayMs: 30, lowcut: 300, mix: num(p, "mix") }),
+        convolutionReverb(ctx, widened, ctx.output, { decay: 4.5, damping: 4000, predelayMs: 30, lowcut: 300, mix: num(p, "mix") }),
       ].join(";");
     },
-  },
-  {
-    id: "alien",
-    name: "Alien",
-    category: "character",
-    description: "Inharmonic frequency shift with modulation: a non-human voice.",
-    whenToUse: "Aliens, unknown transmissions, sci-fi creatures.",
-    tags: ["alien", "extraterrestrial", "sci-fi", "inharmonic"],
-    params: [{ type: "number", id: "shift", label: "Shift", min: -400, max: 400, default: 140, unit: "Hz" }],
-    build: (p, ctx) =>
-      chain(ctx.input, ctx.output, [
-        `afreqshift=shift=${n(num(p, "shift"))}`,
-        vibrato(7, 0.4),
-        "aphaser=speed=1.2:decay=0.5",
-        "volume=8dB",
-      ]),
   },
 ];

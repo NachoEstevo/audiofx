@@ -1,4 +1,4 @@
-import { chain, convolutionReverb, mixInto, n, ramp, slope, vibrato } from "../graph.js";
+import { chain, chorus, convolutionReverb, mixInto, n, peakLimiter, ramp, slope, vibrato } from "../graph.js";
 import type { EffectDefinition, Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
@@ -16,13 +16,18 @@ export const narrativeEffects: EffectDefinition[] = [
     build: (p, ctx) => {
       const a = num(p, "amount");
       const mid = ctx.label("dr");
+      const doubled = ctx.label("drc");
+      const moved = ctx.label("drv");
+      const spatial = ctx.label("drs");
       return [
-        chain(ctx.input, mid, [
-          `lowpass=f=${n(12000 - a * 7000)}`,
-          "chorus=0.8:0.9:40|60:0.4|0.3:0.2|0.3:2|2.5",
-          vibrato(0.3, 0.1 + a * 0.3),
+        chain(ctx.input, mid, [`lowpass=f=${n(12000 - a * 7000)}`]),
+        chorus({ ...ctx, input: mid, output: doubled }, 0.72, [
+          { speed: 0.2, depth: 2, gain: 0.36 },
+          { speed: 0.3, depth: 2.5, gain: 0.27 },
         ]),
-        convolutionReverb(ctx, mid, ctx.output, { decay: 3.5, damping: 5000, predelayMs: 40, lowcut: 200, mix: 0.3 + a * 0.5 }),
+        chain(doubled, moved, [vibrato(0.3, 0.1 + a * 0.3)]),
+        convolutionReverb(ctx, moved, spatial, { decay: 3.5, damping: 5000, predelayMs: 40, lowcut: 200, mix: 0.3 + a * 0.5 }),
+        chain(spatial, ctx.output, [peakLimiter()]),
       ].join(";");
     },
   },
@@ -134,6 +139,7 @@ export const transitionEffects: EffectDefinition[] = [
     build: (p, ctx) => {
       const name = `${p.filter}@${ctx.label("sw")}`;
       return chain(ctx.input, ctx.output, [
+        "asetnsamples=n=64:p=0",
         ramp(name, "f", {
           start: num(p, "start"),
           duration: num(p, "duration"),
@@ -141,7 +147,7 @@ export const transitionEffects: EffectDefinition[] = [
           to: num(p, "toFreq"),
           curve: "exponential",
         }),
-        `${name}=f=${n(num(p, "fromFreq"))}:width_type=q:w=${n(num(p, "q"))}`,
+        `${name}=f=${n(num(p, "fromFreq"))}:width_type=q:w=${n(num(p, "q"))}:transform=zdf`,
       ]);
     },
   },

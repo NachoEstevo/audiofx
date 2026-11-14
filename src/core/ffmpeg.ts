@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { compile, type CompiledGraph } from "./compile.js";
+import { peakLimiter } from "./graph.js";
 import { SAMPLE_RATE, type CompileOptions, type EffectStep } from "./types.js";
 
 let cached: string | undefined;
@@ -68,7 +69,9 @@ export const isVideoFile = (file: string) => VIDEO_EXT.has(path.extname(file).to
 /** Audio encoder args for an output file, chosen by its extension. */
 export function audioCodecArgs(output: string): string[] {
   const ext = path.extname(output).toLowerCase();
-  if (VIDEO_EXT.has(ext)) return ["-c:a", ext === ".webm" ? "libopus" : "aac", "-b:a", "256k"];
+  // AAC noise substitution and intensity stereo can raise decoded peaks on hot masters.
+  const aac = ["-c:a", "aac", "-b:a", "256k", "-aac_pns", "0", "-aac_is", "0"];
+  if (VIDEO_EXT.has(ext)) return ext === ".webm" ? ["-c:a", "libopus", "-b:a", "256k"] : aac;
   switch (ext) {
     case ".wav":
       return ["-c:a", "pcm_s24le"];
@@ -81,10 +84,16 @@ export function audioCodecArgs(output: string): string[] {
       return ["-c:a", "libopus", "-b:a", "192k"];
     case ".m4a":
     case ".aac":
-      return ["-c:a", "aac", "-b:a", "256k"];
+      return aac;
     default:
       throw new Error(`Unsupported output format: "${ext}". Use wav, mp3, flac, ogg, m4a or a video (mp4, mov, mkv, webm).`);
   }
+}
+
+/** Leave room for peak overshoot from lossy codecs. Float preview keeps the chain's original gain. */
+export function encodingCeiling(output: string): string {
+  const ext = path.extname(output).toLowerCase();
+  return peakLimiter(ext === ".wav" || ext === ".flac" ? -1 : -3);
 }
 
 function codecArgs(output: string): string[] {
@@ -111,7 +120,8 @@ export async function applyToFile(input: string, output: string, steps: EffectSt
     ...(options.start !== undefined ? ["-ss", String(options.start)] : []),
     ...(options.duration !== undefined ? ["-t", String(options.duration)] : []),
   ];
-  await runFfmpeg(["-y", "-v", "error", ...trim, "-i", input, "-filter_complex", toComplex(compiled.graph), ...codecArgs(output), output]);
+  const graph = `${compiled.graph},${encodingCeiling(output)}`;
+  await runFfmpeg(["-y", "-v", "error", ...trim, "-i", input, "-filter_complex", toComplex(graph), ...codecArgs(output), output]);
   return compiled;
 }
 

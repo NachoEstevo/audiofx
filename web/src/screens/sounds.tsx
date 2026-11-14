@@ -107,8 +107,11 @@ export function SoundsScreen({ active }: ScreenProps) {
         });
         if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
         const data = await res.arrayBuffer();
-        const url = URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
-        const buffer = await player.load("processed", data);
+        const wav = new Blob([data], { type: "audio/wav" });
+        const buffer = await player.ctx.decodeAudioData(data);
+        if (controller.signal.aborted) return;
+        const url = URL.createObjectURL(wav);
+        player.setBuffer("processed", buffer);
         cache.current.set(key, { buffer, url });
         if (cache.current.size > CACHE_SIZE) {
           const [oldKey, old] = cache.current.entries().next().value!;
@@ -345,6 +348,8 @@ function TweakPanel(props: {
 }) {
   const steps = props.sound.steps
     .map((step, index) => ({ step, index, effect: getEffect(step.effect) }))
+    // The safety limiter at the end of a moment is not part of the sound: nothing to tweak there.
+    .filter(({ step }) => step.effect !== "limiter")
     .filter(({ step }) => {
       const slot = slotOf(step.effect);
       return !(slot && props.slots[slot]);

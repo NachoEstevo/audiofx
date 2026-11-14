@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { LIBRARY_REF } from "./effects/layer.js";
-import { audioCodecArgs, isVideoFile, measureSync, runFfmpeg } from "./ffmpeg.js";
+import { audioCodecArgs, encodingCeiling, isVideoFile, measureSync, runFfmpeg } from "./ffmpeg.js";
 import { probeMedia, type MediaInfo } from "./media.js";
 import { DEFAULT_LOUDNESS, compileMix, validateMix, type CompiledMix, type MixClip, type MixProject } from "./mix.js";
 import { prepareSteps, type PrepareOptions } from "./prepare.js";
@@ -175,6 +175,11 @@ export async function renderMix(project: MixProject, output: string, options: Pr
     args.push("-i", video);
     maps = ["-map", `${index}:v:0`, "-map", "[out]", "-map_metadata", String(index), "-c:v", "copy", "-t", String(compiled.duration)];
   }
-  await runFfmpeg([...args, "-filter_complex", compiled.filterComplex, ...maps, ...audioCodecArgs(output), output]);
+  const ext = path.extname(output).toLowerCase();
+  // WAV and FLAC can use the project's own ceiling. Lossy encoders need extra headroom.
+  const lossy = ext !== ".wav" && ext !== ".flac";
+  const graph = lossy ? `${compiled.filterComplex};[out]${encodingCeiling(output)}[encoded]` : compiled.filterComplex;
+  if (lossy) maps[maps.indexOf("[out]")] = "[encoded]";
+  await runFfmpeg([...args, "-filter_complex", graph, ...maps, ...audioCodecArgs(output), output]);
   return { output, ...compiled };
 }

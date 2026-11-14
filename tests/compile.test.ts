@@ -5,7 +5,7 @@ describe("params", () => {
   it("fills in defaults and converts CLI strings", () => {
     const p = resolveParams(getEffect("pitch"), { semitones: "3", formant: "true" });
     expect(p).toMatchObject({ semitones: 3, formant: true });
-    expect(resolveParams(getEffect("am-radio"), { drive: "10" })).toMatchObject({ drive: 10, noise: 0.4 });
+    expect(resolveParams(getEffect("am-radio"), { drive: "10" })).toMatchObject({ drive: 10, noise: 0.52 });
   });
 
   it("rejects unknown, out-of-range or invalid enum params", () => {
