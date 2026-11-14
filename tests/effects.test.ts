@@ -91,13 +91,14 @@ beforeAll(async () => {
   burst = await makeSignal(
     tmp.dir,
     "burst",
-    "anoisesrc=d=1:c=pink:a=0.3:r=48000,adelay=delays=500:all=1,apad=pad_dur=0.5",
+    // Seeded: with a random burst, the onset detector read the steep lowpasses 30–45 ms late on some runs.
+    "anoisesrc=d=1:c=pink:a=0.3:r=48000:seed=7,adelay=delays=500:all=1,apad=pad_dur=0.5",
   );
   sample = await makeSignal(tmp.dir, "sample", "anoisesrc=d=0.6:c=pink:a=0.5:r=48000:seed=11,afade=t=out:st=0.1:d=0.5");
   mixed = await makeSignal(
     tmp.dir,
     "mixed",
-    "sine=f=220:d=3:r=48000,volume=0.2[a];anoisesrc=d=3:c=pink:a=0.1:r=48000[b];[a][b]amix=inputs=2",
+    "sine=f=220:d=3:r=48000,volume=0.2[a];anoisesrc=d=3:c=pink:a=0.1:r=48000:seed=3[b];[a][b]amix=inputs=2",
   );
 });
 afterAll(() => tmp.cleanup());

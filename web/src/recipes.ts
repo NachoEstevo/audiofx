@@ -29,6 +29,8 @@ export type Slot = "impact" | "whoosh";
 export type Slots = Record<Slot, string | null>;
 export const SLOT_LABELS: Record<Slot, string> = { impact: "Impact", whoosh: "Whoosh" };
 const SLOT_OF: Record<string, Slot> = { hit: "impact", braam: "impact", whoosh: "whoosh" };
+/** The slot a synthesized effect belongs to, if a sample can stand in for it. */
+export const slotOf = (effect: string): Slot | undefined => SLOT_OF[effect];
 
 /** A library file as a `layer` param: the server turns the id into a path. */
 export const libraryRef = (id: string) => `library:${id}`;

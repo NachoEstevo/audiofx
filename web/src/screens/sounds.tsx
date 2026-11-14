@@ -3,13 +3,13 @@ import { compile } from "../../../src/core/compile";
 import { getEffect, resolveParams } from "../../../src/core/registry";
 import type { EffectStep, ParamValue } from "../../../src/core/types";
 import { ChainDrawer } from "@/components/chain-drawer";
-import { StepCard, type SampleOption, type Step } from "@/components/chain";
+import { ParamControl, StepCard, type SampleOption, type Step } from "@/components/chain";
 import { ExportPanel } from "@/components/export-panel";
 import { SoundGrid } from "@/components/sound-grid";
 import { SourcePicker } from "@/components/source-picker";
 import { Stage, type RenderState } from "@/components/stage";
 import { Player } from "../player";
-import { CATEGORY_COLORS, sampleSound, stepsAt, type Slot, type Slots, type Sound } from "../recipes";
+import { CATEGORY_COLORS, sampleSound, slotOf, stepsAt, type Slot, type Slots, type Sound } from "../recipes";
 import { HeaderSlot, Kbd, ShortcutHint, useScreen, type ScreenProps } from "../shell";
 import { initialMoment, useSource } from "../source";
 import { fromSteps, toStep } from "../steps";
@@ -23,6 +23,8 @@ export function SoundsScreen({ active }: ScreenProps) {
   const [, force] = useState(0);
   const [chain, setChain] = useState<Step[]>([]);
   const [selected, setSelected] = useState<Sound | null>(null);
+  // Param changes made while trying a sound, by sound id and step: kept for the session, carried into the chain.
+  const [tweaks, setTweaks] = useState<Tweaks>({});
   const [moment, setMoment] = useState(0);
   const [slots, setSlots] = useState<Slots>({ impact: null, whoosh: null });
   const [render, setRender] = useState<RenderState>({ status: "idle" });
@@ -55,16 +57,17 @@ export function SoundsScreen({ active }: ScreenProps) {
     const live = (id: string | null) => (id && sampleOptions.some((s) => s.id === id) ? id : null);
     return { impact: live(slots.impact), whoosh: live(slots.whoosh) };
   }, [slots, sampleOptions]);
+  const tuned = useMemo(() => (selected ? withTweaks(selected, tweaks) : null), [selected, tweaks]);
   const chainSteps = useMemo(() => fromSteps(chain), [chain]);
   const heard = useMemo(() => {
-    const steps = [...chainSteps, ...(selected ? stepsAt(selected.steps, moment, duration, liveSlots) : [])];
+    const steps = [...chainSteps, ...(tuned ? stepsAt(tuned.steps, moment, duration, liveSlots) : [])];
     try {
       if (steps.length) compile(steps);
       return { steps, error: null as string | null };
     } catch (error) {
       return { steps: [] as EffectStep[], error: (error as Error).message };
     }
-  }, [chainSteps, selected, moment, duration, liveSlots]);
+  }, [chainSteps, tuned, moment, duration, liveSlots]);
 
   // Render (or hit the cache) whenever what you hear changes.
   useEffect(() => {
@@ -140,7 +143,7 @@ export function SoundsScreen({ active }: ScreenProps) {
 
   const addSound = (sound: Sound) => {
     try {
-      const steps = stepsAt(sound.steps, moment, duration, liveSlots).map(toStep);
+      const steps = stepsAt(withTweaks(sound, tweaks).steps, moment, duration, liveSlots).map(toStep);
       setChain((list) => [...list, ...steps]);
       if (selected?.id === sound.id) setSelected(null);
       playAfter.current = { seek: sound.timed ? Math.max(0, moment - 2.5) : null };
@@ -152,7 +155,7 @@ export function SoundsScreen({ active }: ScreenProps) {
 
   /** Commits the sound being previewed (so it stays before the limiter) and adds a safety limiter last. */
   const addLimiter = () => {
-    const previewed = selected ? stepsAt(selected.steps, moment, duration, liveSlots).map(toStep) : [];
+    const previewed = tuned ? stepsAt(tuned.steps, moment, duration, liveSlots).map(toStep) : [];
     setChain((list) => [...list, ...previewed, toStep({ effect: "limiter" })]);
     setSelected(null);
     showToast(selected ? `${selected.name} and a limiter added to your chain` : "Limiter added at the end of your chain");
@@ -258,6 +261,17 @@ export function SoundsScreen({ active }: ScreenProps) {
             onHoldOriginal={setHoldOriginal}
             onAddLimiter={addLimiter}
           />
+          {tuned && (
+            <TweakPanel
+              sound={tuned}
+              slots={liveSlots}
+              moment={moment}
+              samples={sampleOptions}
+              changed={!!tweaks[tuned.id]}
+              onParam={(step, id, value) => setTweaks((t) => ({ ...t, [tuned.id]: { ...t[tuned.id], [step]: { ...t[tuned.id]?.[step], [id]: value } } }))}
+              onReset={() => setTweaks(({ [tuned.id]: _, ...rest }) => rest)}
+            />
+          )}
         </div>
 
         <div className="min-w-0 space-y-8 max-lg:mt-8">
@@ -305,5 +319,64 @@ export function SoundsScreen({ active }: ScreenProps) {
         </div>
       </div>
     </>
+  );
+}
+
+type Tweaks = Record<string, Record<number, Record<string, ParamValue>>>;
+
+/** The sound with the params changed while trying it. */
+function withTweaks(sound: Sound, tweaks: Tweaks): Sound {
+  const mine = tweaks[sound.id];
+  return mine ? { ...sound, steps: sound.steps.map((step, i) => (mine[i] ? { ...step, params: { ...step.params, ...mine[i] } } : step)) } : sound;
+}
+
+/**
+ * The params of the sound being tried, editable in place: every change re-renders it. The moment itself is
+ * set on the waveform, and a step replaced by a sample has no params of its own.
+ */
+function TweakPanel(props: {
+  sound: Sound;
+  slots: Slots;
+  moment: number;
+  samples: SampleOption[];
+  changed: boolean;
+  onParam: (step: number, id: string, value: ParamValue) => void;
+  onReset: () => void;
+}) {
+  const steps = props.sound.steps
+    .map((step, index) => ({ step, index, effect: getEffect(step.effect) }))
+    .filter(({ step }) => {
+      const slot = slotOf(step.effect);
+      return !(slot && props.slots[slot]);
+    })
+    .map((s) => ({ ...s, specs: s.effect.params.filter((spec) => spec.id !== "at" && spec.type !== "file") }))
+    .filter((s) => s.specs.length);
+  if (!steps.length) return null;
+  return (
+    <section aria-label={`Tweak ${props.sound.name}`} className="animate-rise mt-4 rounded-[28px] bg-card p-5 shadow-card sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-display text-[19px] tracking-[-0.02em]">Tweak</h3>
+        {props.changed && (
+          <button onClick={props.onReset} className="cursor-pointer text-[13px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Reset
+          </button>
+        )}
+      </div>
+      <div className="mt-4 space-y-6">
+        {steps.map(({ step, index, effect, specs }) => {
+          const values = resolveParams(effect, step.params);
+          return (
+            <div key={index}>
+              {steps.length > 1 && <p className="mb-3 text-[13px] font-medium">{effect.name}</p>}
+              <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                {specs.map((spec) => (
+                  <ParamControl key={spec.id} spec={spec} value={values[spec.id]} moment={props.moment} samples={props.samples} onChange={(v) => props.onParam(index, spec.id, v)} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }

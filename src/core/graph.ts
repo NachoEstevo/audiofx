@@ -76,6 +76,12 @@ function reverbIrChannel(ctx: BuildContext, out: string, seed: number, o: { deca
   ].join(";");
 }
 
+/**
+ * The IR's `decay` is the length of its fades, which reach -100 dB: the measured RT60 (the time to fall 60 dB)
+ * is 0.59 of it. Multiply a wanted RT60 by this to get the `decay` that gives it.
+ */
+export const DECAY_FOR_RT60 = 1 / 0.59;
+
 /** Convolution reverb with a synthetic stereo IR (no external files or licenses). */
 export function convolutionReverb(
   ctx: BuildContext,

@@ -41,8 +41,14 @@ function samplePeak(buffer: AudioBuffer): { db: number; clipped: number } {
 
 import { safeForPlayback } from "./safety";
 
-/** Seconds to ease from one render into the next while playing. */
-const SWAP_FADE = 0.25;
+/**
+ * Easing from one render into the next while playing: the old one fades out, the new one comes up just
+ * behind it. They barely overlap on purpose: two versions of the same audio a few milliseconds apart
+ * (a chorus, a filter's delay) comb-filter while they sound together, and a long crossfade turns that into
+ * a sweep.
+ */
+const SWAP_OUT = 0.09;
+const SWAP_IN = { delay: 0.05, fade: 0.14 };
 /** Seconds to cross between original and processed: short, so the comparison stays immediate but does not click. */
 const TOGGLE_FADE = 0.03;
 
@@ -226,11 +232,11 @@ export class Player {
   /** A new render or loop setting while playing: eases from what was sounding into the new one. */
   private restart() {
     const at = this.time;
-    this.stop(SWAP_FADE);
-    this.startAt(at, SWAP_FADE);
+    this.stop(SWAP_OUT);
+    this.startAt(at, SWAP_IN.fade, SWAP_IN.delay);
   }
 
-  private startAt(at: number, fade = 0) {
+  private startAt(at: number, fade = 0, delay = 0) {
     const buffer = this.playable[this.track] ?? this.playable.original;
     if (!buffer) return;
     const node = this.ctx.createBufferSource();
@@ -239,7 +245,8 @@ export class Player {
     const fader = this.ctx.createGain();
     if (fade > 0) {
       fader.gain.setValueAtTime(0, this.ctx.currentTime);
-      fader.gain.linearRampToValueAtTime(1, this.ctx.currentTime + fade);
+      fader.gain.setValueAtTime(0, this.ctx.currentTime + delay);
+      fader.gain.linearRampToValueAtTime(1, this.ctx.currentTime + delay + fade);
     }
     node.connect(fader);
     fader.connect(this.gain);

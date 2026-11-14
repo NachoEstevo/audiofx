@@ -1,4 +1,4 @@
-import { chain, convolutionReverb, n, slope, vibrato } from "../graph.js";
+import { DECAY_FOR_RT60, chain, convolutionReverb, n, slope, vibrato } from "../graph.js";
 import type { EffectDefinition, Params } from "../types.js";
 
 const num = (p: Params, k: string) => p[k] as number;
@@ -65,7 +65,7 @@ function passByCommands(p: PassBy, pitchTarget: string, air: { target: string; a
   return { pitch, lowpass };
 }
 
-/** Preset spaces: decay (s), high damping (Hz), pre-delay (ms). */
+/** Preset spaces: decay as RT60 in seconds (the time to fall 60 dB, as rooms are measured), high damping (Hz), pre-delay (ms). */
 export const SPACES = {
   bathroom: { decay: 0.9, damping: 9000, predelay: 4, lowcut: 300 },
   room: { decay: 0.6, damping: 6000, predelay: 8, lowcut: 150 },
@@ -95,7 +95,7 @@ export const spaceEffects: EffectDefinition[] = [
     build: (p, ctx) => {
       const s = SPACES[p.space as SpaceName];
       return convolutionReverb(ctx, ctx.input, ctx.output, {
-        decay: s.decay * num(p, "size"),
+        decay: s.decay * num(p, "size") * DECAY_FOR_RT60,
         damping: s.damping,
         predelayMs: s.predelay * num(p, "size"),
         lowcut: s.lowcut,
